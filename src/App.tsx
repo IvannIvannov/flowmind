@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import Calendar from "./components/Calendar/Calendar";
 import "./App.css";
 
-type Page = "dashboard" | "tasks" | "projects";
+type Page = "dashboard" | "tasks" | "projects" | "calendar";
 type Priority = "low" | "medium" | "high";
 type Status = "todo" | "in-progress" | "completed";
 type Sort = "newest" | "oldest" | "priority" | "due-date";
@@ -50,7 +51,9 @@ function readStoredArray<T>(
   try {
     const text = localStorage.getItem(key);
     if (!text) return [];
+
     const data: unknown = JSON.parse(text);
+
     return Array.isArray(data) ? data.filter(validate) : [];
   } catch {
     console.error(`Unable to read ${key}`);
@@ -60,45 +63,52 @@ function readStoredArray<T>(
 
 function isTask(value: unknown): value is Task {
   if (!value || typeof value !== "object") return false;
-  const t = value as Partial<Task>;
+
+  const task = value as Partial<Task>;
+
   return (
-    typeof t.id === "string" &&
-    typeof t.title === "string" &&
-    typeof t.createdAt === "string" &&
-    ["low", "medium", "high"].includes(t.priority ?? "") &&
-    ["todo", "in-progress", "completed"].includes(t.status ?? "")
+    typeof task.id === "string" &&
+    typeof task.title === "string" &&
+    typeof task.createdAt === "string" &&
+    ["low", "medium", "high"].includes(task.priority ?? "") &&
+    ["todo", "in-progress", "completed"].includes(task.status ?? "")
   );
 }
 
 function isProject(value: unknown): value is Project {
   if (!value || typeof value !== "object") return false;
-  const p = value as Partial<Project>;
+
+  const project = value as Partial<Project>;
+
   return (
-    typeof p.id === "string" &&
-    typeof p.name === "string" &&
-    typeof p.description === "string" &&
-    typeof p.color === "string" &&
-    typeof p.createdAt === "string"
+    typeof project.id === "string" &&
+    typeof project.name === "string" &&
+    typeof project.description === "string" &&
+    typeof project.color === "string" &&
+    typeof project.createdAt === "string"
   );
 }
 
-function todayString() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+function todayString(): string {
+  const date = new Date();
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
   return `${year}-${month}-${day}`;
 }
 
-function formattedDate(value: string) {
-  const [y, m, d] = value.split("-").map(Number);
-  if (!y || !m || !d) return value;
+function formattedDate(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) return value;
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(y, m - 1, d));
+  }).format(new Date(year, month - 1, day));
 }
 
 function App() {
@@ -112,17 +122,20 @@ function App() {
     readStoredArray(PROJECTS_KEY, isProject),
   );
 
+  // Task form
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>("medium");
   const [dueDate, setDueDate] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
+  const [editingTask, setEditingTask] = useState<string | null>(null);
 
+  // Task filtering and sorting
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [sort, setSort] = useState<Sort>("newest");
 
-  const [editingTask, setEditingTask] = useState<string | null>(null);
+  // Project form
   const [editingProject, setEditingProject] = useState<string | null>(null);
 
   const [projectName, setProjectName] = useState("");
@@ -131,6 +144,7 @@ function App() {
 
   const today = todayString();
 
+  // Persistence
   useEffect(() => {
     try {
       localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
@@ -147,45 +161,66 @@ function App() {
     }
   }, [projects]);
 
+  // Dashboard statistics
   const stats = useMemo(
     () => ({
       total: tasks.length,
-      inProgress: tasks.filter((t) => t.status === "in-progress").length,
-      completed: tasks.filter((t) => t.status === "completed").length,
+
+      inProgress: tasks.filter((task) => task.status === "in-progress").length,
+
+      completed: tasks.filter((task) => task.status === "completed").length,
+
       dueToday: tasks.filter(
-        (t) => t.status !== "completed" && t.dueDate === today,
+        (task) => task.status !== "completed" && task.dueDate === today,
       ).length,
+
       overdue: tasks.filter(
-        (t) => t.status !== "completed" && t.dueDate && t.dueDate < today,
+        (task) =>
+          task.status !== "completed" && task.dueDate && task.dueDate < today,
       ).length,
     }),
     [tasks, today],
   );
 
+  // Task search, filters and sorting
   const visibleTasks = useMemo(() => {
     return tasks
-      .filter(
-        (t) =>
-          t.title.toLowerCase().includes(search.toLowerCase().trim()) &&
-          (statusFilter === "all" || t.status === statusFilter) &&
-          (projectFilter === "all" ||
-            (projectFilter === "none"
-              ? !t.projectId || !projects.some((p) => p.id === t.projectId)
-              : t.projectId === projectFilter)),
-      )
+      .filter((task) => {
+        const matchesSearch = task.title
+          .toLowerCase()
+          .includes(search.toLowerCase().trim());
+
+        const matchesStatus =
+          statusFilter === "all" || task.status === statusFilter;
+
+        const matchesProject =
+          projectFilter === "all" ||
+          (projectFilter === "none"
+            ? !task.projectId ||
+              !projects.some((project) => project.id === task.projectId)
+            : task.projectId === projectFilter);
+
+        return matchesSearch && matchesStatus && matchesProject;
+      })
       .sort((a, b) => {
         if (sort === "priority") {
-          const diff = PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
-          if (diff) return diff;
+          const difference =
+            PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
+
+          if (difference) return difference;
         }
+
         if (sort === "due-date") {
-          return (a.dueDate || "9999-12-31").localeCompare(
-            b.dueDate || "9999-12-31",
-          );
+          const dateA = a.dueDate || "9999-12-31";
+          const dateB = b.dueDate || "9999-12-31";
+
+          return dateA.localeCompare(dateB);
         }
+
         if (sort === "oldest") {
           return a.createdAt.localeCompare(b.createdAt);
         }
+
         return b.createdAt.localeCompare(a.createdAt);
       });
   }, [tasks, projects, search, statusFilter, projectFilter, sort]);
@@ -200,36 +235,39 @@ function App() {
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!title.trim()) return;
 
-    const projectId = projects.some((p) => p.id === selectedProject)
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+
+    const projectId = projects.some((project) => project.id === selectedProject)
       ? selectedProject
       : undefined;
 
     if (editingTask) {
       setTasks((previous) =>
-        previous.map((t) =>
-          t.id === editingTask
+        previous.map((task) =>
+          task.id === editingTask
             ? {
-                ...t,
-                title: title.trim(),
+                ...task,
+                title: trimmedTitle,
                 priority,
                 dueDate: dueDate || undefined,
                 projectId,
               }
-            : t,
+            : task,
         ),
       );
     } else {
       const task: Task = {
         id: crypto.randomUUID(),
-        title: title.trim(),
+        title: trimmedTitle,
         priority,
         status: "todo",
         dueDate: dueDate || undefined,
         projectId,
         createdAt: new Date().toISOString(),
       };
+
       setTasks((previous) => [task, ...previous]);
     }
 
@@ -242,22 +280,32 @@ function App() {
     setPriority(task.priority);
     setDueDate(task.dueDate || "");
     setSelectedProject(task.projectId || "");
+
+    setSearch("");
+    setStatusFilter("all");
+    setProjectFilter("all");
     setPage("tasks");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function changeStatus(id: string, status: Status) {
     setTasks((previous) =>
-      previous.map((t) => (t.id === id ? { ...t, status } : t)),
+      previous.map((task) => (task.id === id ? { ...task, status } : task)),
     );
   }
 
   function deleteTask(task: Task) {
-    if (!window.confirm(`Delete task "${task.title}"?`)) return;
-    setTasks((previous) => previous.filter((t) => t.id !== task.id));
-    if (editingTask === task.id) resetTaskForm();
+    const confirmed = window.confirm(`Delete task "${task.title}"?`);
+
+    if (!confirmed) return;
+
+    setTasks((previous) => previous.filter((item) => item.id !== task.id));
+
+    if (editingTask === task.id) {
+      resetTaskForm();
+    }
   }
 
+  // Project management
   function resetProjectForm() {
     setProjectName("");
     setProjectDescription("");
@@ -267,12 +315,14 @@ function App() {
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!projectName.trim()) return;
+
+    const name = projectName.trim();
+    if (!name) return;
 
     const duplicate = projects.some(
-      (p) =>
-        p.name.trim().toLowerCase() === projectName.trim().toLowerCase() &&
-        p.id !== editingProject,
+      (project) =>
+        project.name.trim().toLowerCase() === name.toLowerCase() &&
+        project.id !== editingProject,
     );
 
     if (duplicate) {
@@ -282,28 +332,27 @@ function App() {
 
     if (editingProject) {
       setProjects((previous) =>
-        previous.map((p) =>
-          p.id === editingProject
+        previous.map((project) =>
+          project.id === editingProject
             ? {
-                ...p,
-                name: projectName.trim(),
+                ...project,
+                name,
                 description: projectDescription.trim(),
                 color: projectColor,
               }
-            : p,
+            : project,
         ),
       );
     } else {
-      setProjects((previous) => [
-        ...previous,
-        {
-          id: crypto.randomUUID(),
-          name: projectName.trim(),
-          description: projectDescription.trim(),
-          color: projectColor,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      const project: Project = {
+        id: crypto.randomUUID(),
+        name,
+        description: projectDescription.trim(),
+        color: projectColor,
+        createdAt: new Date().toISOString(),
+      };
+
+      setProjects((previous) => [...previous, project]);
     }
 
     resetProjectForm();
@@ -317,7 +366,7 @@ function App() {
   }
 
   function deleteProject(project: Project) {
-    const count = tasks.filter((t) => t.projectId === project.id).length;
+    const count = tasks.filter((task) => task.projectId === project.id).length;
 
     const confirmed = window.confirm(
       `Delete "${project.name}"?\n\n` +
@@ -327,38 +376,59 @@ function App() {
 
     if (!confirmed) return;
 
-    setProjects((previous) => previous.filter((p) => p.id !== project.id));
+    setProjects((previous) =>
+      previous.filter((item) => item.id !== project.id),
+    );
+
     setTasks((previous) =>
-      previous.map((t) =>
-        t.projectId === project.id ? { ...t, projectId: undefined } : t,
+      previous.map((task) =>
+        task.projectId === project.id
+          ? { ...task, projectId: undefined }
+          : task,
       ),
     );
 
-    if (projectFilter === project.id) setProjectFilter("all");
-    if (selectedProject === project.id) setSelectedProject("");
-    if (editingProject === project.id) resetProjectForm();
+    if (projectFilter === project.id) {
+      setProjectFilter("all");
+    }
+
+    if (selectedProject === project.id) {
+      setSelectedProject("");
+    }
+
+    if (editingProject === project.id) {
+      resetProjectForm();
+    }
   }
 
   function projectForTask(task: Task) {
-    return projects.find((p) => p.id === task.projectId);
+    return projects.find((project) => project.id === task.projectId);
   }
 
-  function deadlineLabel(task: Task) {
+  function deadlineLabel(task: Task): string {
     if (!task.dueDate) return "";
 
     if (task.status !== "completed") {
       if (task.dueDate < today) {
         return `Overdue: ${formattedDate(task.dueDate)}`;
       }
-      if (task.dueDate === today) return "Due today";
+
+      if (task.dueDate === today) {
+        return "Due today";
+      }
     }
+
     return `Due: ${formattedDate(task.dueDate)}`;
   }
 
-  function deadlineClass(task: Task) {
-    if (!task.dueDate || task.status === "completed") return "";
+  function deadlineClass(task: Task): string {
+    if (!task.dueDate || task.status === "completed") {
+      return "";
+    }
+
     if (task.dueDate < today) return "overdue";
     if (task.dueDate === today) return "today";
+
     return "upcoming";
   }
 
@@ -367,6 +437,25 @@ function App() {
     setStatusFilter("all");
     setSearch("");
     setPage("tasks");
+  }
+
+  // Calendar integration
+  function addTaskFromCalendar(date: string) {
+    resetTaskForm();
+
+    setDueDate(date);
+    setSearch("");
+    setStatusFilter("all");
+    setProjectFilter("all");
+    setPage("tasks");
+  }
+
+  function openTaskFromCalendar(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+
+    if (!task) return;
+
+    startEditTask(task);
   }
 
   return (
@@ -381,30 +470,38 @@ function App() {
           >
             🏠 Dashboard
           </button>
+
           <button
             className={`nav-item ${page === "tasks" ? "active" : ""}`}
             onClick={() => setPage("tasks")}
           >
             ✅ My Tasks
           </button>
+
           <button
             className={`nav-item ${page === "projects" ? "active" : ""}`}
             onClick={() => setPage("projects")}
           >
             📁 Projects
           </button>
-          <button className="nav-item" disabled>
+
+          <button
+            className={`nav-item ${page === "calendar" ? "active" : ""}`}
+            onClick={() => setPage("calendar")}
+          >
             📅 Calendar
           </button>
+
           <button className="nav-item" disabled>
             🧠 AI Assistant
           </button>
+
           <button className="nav-item" disabled>
             ⚙️ Settings
           </button>
         </nav>
 
-        <div className="sidebar-footer">FlowMind v0.4.0</div>
+        <div className="sidebar-footer">FlowMind v0.5.0</div>
       </aside>
 
       <main className="content">
@@ -412,7 +509,9 @@ function App() {
           <>
             <header className="page-header">
               <p className="subtitle">YOUR PERSONAL WORKSPACE</p>
+
               <h1>Welcome to FlowMind 👋</h1>
+
               <p className="description">
                 Organize your tasks, projects and ideas in one place.
               </p>
@@ -420,8 +519,11 @@ function App() {
 
             <section className="welcome-card">
               <div className="card-icon">✨</div>
+
               <h2>Your workspace is ready!</h2>
+
               <p>Stay organized and focus on what matters most.</p>
+
               <button
                 className="primary-button"
                 onClick={() => setPage("tasks")}
@@ -441,6 +543,7 @@ function App() {
               ].map(([label, value, description]) => (
                 <div className="stat-card" key={label}>
                   <p>{label}</p>
+
                   <h2
                     className={
                       label === "Overdue" && stats.overdue > 0
@@ -450,6 +553,7 @@ function App() {
                   >
                     {value}
                   </h2>
+
                   <span>{description}</span>
                 </div>
               ))}
@@ -459,6 +563,7 @@ function App() {
               <section className="dashboard-projects">
                 <div className="section-heading">
                   <h2>Your Projects</h2>
+
                   <button
                     className="text-button"
                     onClick={() => setPage("projects")}
@@ -466,14 +571,17 @@ function App() {
                     View all →
                   </button>
                 </div>
+
                 <div className="project-grid">
                   {projects.slice(0, 3).map((project) => {
                     const items = tasks.filter(
-                      (t) => t.projectId === project.id,
+                      (task) => task.projectId === project.id,
                     );
+
                     const done = items.filter(
-                      (t) => t.status === "completed",
+                      (task) => task.status === "completed",
                     ).length;
+
                     const percent = items.length
                       ? Math.round((done / items.length) * 100)
                       : 0;
@@ -483,13 +591,18 @@ function App() {
                         <div className="project-card-top">
                           <span
                             className="project-dot"
-                            style={{ backgroundColor: project.color }}
+                            style={{
+                              backgroundColor: project.color,
+                            }}
                           />
+
                           <h3>{project.name}</h3>
                         </div>
+
                         <p>
                           {items.length} tasks · {percent}% complete
                         </p>
+
                         <div className="progress-track">
                           <div
                             className="progress-fill"
@@ -512,7 +625,9 @@ function App() {
           <>
             <header className="page-header">
               <p className="subtitle">STAY ORGANIZED</p>
+
               <h1>My Tasks ✅</h1>
+
               <p className="description">
                 Manage tasks, projects, priorities and deadlines.
               </p>
@@ -524,10 +639,11 @@ function App() {
               <form className="task-form" onSubmit={submitTask}>
                 <div className="form-field title-field">
                   <label htmlFor="task-title">Task Name</label>
+
                   <input
                     id="task-title"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(event) => setTitle(event.target.value)}
                     placeholder="What do you need to do?"
                     maxLength={200}
                     required
@@ -536,10 +652,13 @@ function App() {
 
                 <div className="form-field">
                   <label htmlFor="task-priority">Priority</label>
+
                   <select
                     id="task-priority"
                     value={priority}
-                    onChange={(e) => setPriority(e.target.value as Priority)}
+                    onChange={(event) =>
+                      setPriority(event.target.value as Priority)
+                    }
                   >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -549,25 +668,28 @@ function App() {
 
                 <div className="form-field">
                   <label htmlFor="task-date">Due Date</label>
+
                   <input
                     id="task-date"
                     type="date"
                     value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
+                    onChange={(event) => setDueDate(event.target.value)}
                   />
                 </div>
 
                 <div className="form-field">
                   <label htmlFor="task-project">Project</label>
+
                   <select
                     id="task-project"
                     value={selectedProject}
-                    onChange={(e) => setSelectedProject(e.target.value)}
+                    onChange={(event) => setSelectedProject(event.target.value)}
                   >
                     <option value="">No Project</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
+
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
                       </option>
                     ))}
                   </select>
@@ -577,6 +699,7 @@ function App() {
                   <button type="submit" className="primary-button">
                     {editingTask ? "Save Changes" : "+ Add Task"}
                   </button>
+
                   {editingTask && (
                     <button
                       type="button"
@@ -593,6 +716,7 @@ function App() {
             <section className="task-panel">
               <div className="section-heading">
                 <h2>Your Tasks ({visibleTasks.length})</h2>
+
                 <span className="muted">
                   {stats.completed} of {stats.total} completed
                 </span>
@@ -604,13 +728,13 @@ function App() {
                   aria-label="Search tasks"
                   placeholder="Search tasks..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(event) => setSearch(event.target.value)}
                 />
 
                 <select
                   aria-label="Filter by status"
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(event) => setStatusFilter(event.target.value)}
                 >
                   <option value="all">All Statuses</option>
                   <option value="todo">To Do</option>
@@ -621,13 +745,14 @@ function App() {
                 <select
                   aria-label="Filter by project"
                   value={projectFilter}
-                  onChange={(e) => setProjectFilter(e.target.value)}
+                  onChange={(event) => setProjectFilter(event.target.value)}
                 >
                   <option value="all">All Projects</option>
                   <option value="none">No Project</option>
-                  {projects.map((p) => (
-                    <option value={p.id} key={p.id}>
-                      {p.name}
+
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
                     </option>
                   ))}
                 </select>
@@ -635,7 +760,7 @@ function App() {
                 <select
                   aria-label="Sort tasks"
                   value={sort}
-                  onChange={(e) => setSort(e.target.value as Sort)}
+                  onChange={(event) => setSort(event.target.value as Sort)}
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -647,7 +772,9 @@ function App() {
               {visibleTasks.length === 0 ? (
                 <div className="empty-state">
                   <div>📋</div>
+
                   <h3>No matching tasks</h3>
+
                   <p>Create a task or change your filters.</p>
                 </div>
               ) : (
@@ -687,8 +814,11 @@ function App() {
                               <span className="project-tag">
                                 <span
                                   className="project-dot"
-                                  style={{ backgroundColor: project.color }}
+                                  style={{
+                                    backgroundColor: project.color,
+                                  }}
                                 />
+
                                 {project.name}
                               </span>
                             )}
@@ -699,8 +829,11 @@ function App() {
                           <select
                             aria-label={`Status for ${task.title}`}
                             value={task.status}
-                            onChange={(e) =>
-                              changeStatus(task.id, e.target.value as Status)
+                            onChange={(event) =>
+                              changeStatus(
+                                task.id,
+                                event.target.value as Status,
+                              )
                             }
                           >
                             <option value="todo">To Do</option>
@@ -739,7 +872,9 @@ function App() {
           <>
             <header className="page-header">
               <p className="subtitle">ORGANIZE YOUR WORK</p>
+
               <h1>Projects 📁</h1>
+
               <p className="description">
                 Group related tasks and track your progress.
               </p>
@@ -751,13 +886,14 @@ function App() {
               <form className="project-form" onSubmit={submitProject}>
                 <div className="form-field">
                   <label htmlFor="project-name">Project Name</label>
+
                   <input
                     id="project-name"
                     placeholder="e.g. University"
                     value={projectName}
                     maxLength={80}
                     required
-                    onChange={(e) => setProjectName(e.target.value)}
+                    onChange={(event) => setProjectName(event.target.value)}
                   />
                 </div>
 
@@ -765,18 +901,22 @@ function App() {
                   <label htmlFor="project-description">
                     Description (Optional)
                   </label>
+
                   <textarea
                     id="project-description"
                     placeholder="What's this project about?"
                     value={projectDescription}
                     maxLength={300}
                     rows={3}
-                    onChange={(e) => setProjectDescription(e.target.value)}
+                    onChange={(event) =>
+                      setProjectDescription(event.target.value)
+                    }
                   />
                 </div>
 
                 <div className="form-field">
                   <label>Project Color</label>
+
                   <div className="color-picker">
                     {COLORS.map((color) => (
                       <button
@@ -787,7 +927,9 @@ function App() {
                         className={`color-choice ${
                           projectColor === color ? "selected" : ""
                         }`}
-                        style={{ backgroundColor: color }}
+                        style={{
+                          backgroundColor: color,
+                        }}
                         onClick={() => setProjectColor(color)}
                       />
                     ))}
@@ -826,11 +968,13 @@ function App() {
               <div className="project-grid">
                 {projects.map((project) => {
                   const projectTasks = tasks.filter(
-                    (t) => t.projectId === project.id,
+                    (task) => task.projectId === project.id,
                   );
+
                   const done = projectTasks.filter(
-                    (t) => t.status === "completed",
+                    (task) => task.status === "completed",
                   ).length;
+
                   const percent = projectTasks.length
                     ? Math.round((done / projectTasks.length) * 100)
                     : 0;
@@ -840,8 +984,11 @@ function App() {
                       <div className="project-card-top">
                         <span
                           className="project-dot"
-                          style={{ backgroundColor: project.color }}
+                          style={{
+                            backgroundColor: project.color,
+                          }}
                         />
+
                         <h3>{project.name}</h3>
                       </div>
 
@@ -853,6 +1000,7 @@ function App() {
                         <span>
                           {done}/{projectTasks.length} tasks completed
                         </span>
+
                         <strong>{percent}%</strong>
                       </div>
 
@@ -873,6 +1021,7 @@ function App() {
                         >
                           View Tasks
                         </button>
+
                         <button
                           className="icon-button edit-button"
                           title="Edit project"
@@ -881,6 +1030,7 @@ function App() {
                         >
                           ✏️
                         </button>
+
                         <button
                           className="icon-button delete-button"
                           title="Delete project"
@@ -896,6 +1046,15 @@ function App() {
               </div>
             )}
           </>
+        )}
+
+        {page === "calendar" && (
+          <Calendar
+            tasks={tasks}
+            projects={projects}
+            onAddTask={addTaskFromCalendar}
+            onOpenTask={openTaskFromCalendar}
+          />
         )}
       </main>
     </div>
