@@ -31,6 +31,11 @@ const menuItems: {
     icon: "📅",
     label: "Calendar",
   },
+  {
+    page: "ai",
+    icon: "🧠",
+    label: "AI Assistant",
+  },
 ];
 
 function Sidebar({ currentPage, onNavigate }: SidebarProps) {
@@ -62,14 +67,6 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         <div className="fm-sidebar-divider" />
 
         <button type="button" className="fm-sidebar-item" disabled>
-          <span className="fm-sidebar-icon">🧠</span>
-
-          <span>AI Assistant</span>
-
-          <span className="fm-sidebar-soon">Soon</span>
-        </button>
-
-        <button type="button" className="fm-sidebar-item" disabled>
           <span className="fm-sidebar-icon">⚙️</span>
 
           <span>Settings</span>
@@ -81,7 +78,7 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       <div className="fm-sidebar-footer">
         <span className="fm-sidebar-status-dot" />
 
-        <span>FlowMind v0.6.0</span>
+        <span>FlowMind v0.7.0</span>
       </div>
     </aside>
   );

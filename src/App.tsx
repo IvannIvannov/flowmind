@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
+import AIAssistant from "./AI/AIAssistant";
+import type { AssistantTaskDraft } from "./AI/AIAssistant";
+
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
 import Projects from "./components/Projects/Projects";
@@ -78,7 +81,7 @@ function App() {
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  // SAVE DATA
+  // PERSISTENCE
 
   useEffect(() => {
     saveTasks(tasks);
@@ -88,7 +91,7 @@ function App() {
     saveProjects(projects);
   }, [projects]);
 
-  // TASK FILTERING AND SORTING
+  // TASK FILTERING
 
   const visibleTasks = useMemo(() => {
     const { search, status, project, sort } = taskFilters;
@@ -115,9 +118,7 @@ function App() {
           const difference =
             PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
 
-          if (difference !== 0) {
-            return difference;
-          }
+          if (difference !== 0) return difference;
         }
 
         if (sort === "due-date") {
@@ -154,13 +155,12 @@ function App() {
     setTaskForm({ ...INITIAL_TASK_FORM });
   }
 
-  // CREATE AND EDIT TASKS
+  // TASK MANAGEMENT
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = taskForm.title.trim();
-
     if (!name) return;
 
     const projectId = projects.some(
@@ -237,6 +237,30 @@ function App() {
     }
   }
 
+  // TASK CREATION FROM ASSISTANT
+
+  function createTaskFromAssistant(draft: AssistantTaskDraft) {
+    const name = draft.title.trim();
+
+    if (!name) return;
+
+    const projectId = projects.some((project) => project.id === draft.projectId)
+      ? draft.projectId
+      : undefined;
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: name,
+      priority: draft.priority,
+      status: "todo",
+      dueDate: draft.dueDate,
+      projectId,
+      createdAt: new Date().toISOString(),
+    };
+
+    setTasks((previous) => [newTask, ...previous]);
+  }
+
   // PROJECT FORM
 
   function updateProjectForm(changes: Partial<ProjectFormState>) {
@@ -247,18 +271,15 @@ function App() {
   }
 
   function resetProjectForm() {
-    setProjectForm({
-      ...INITIAL_PROJECT_FORM,
-    });
+    setProjectForm({ ...INITIAL_PROJECT_FORM });
   }
 
-  // CREATE AND EDIT PROJECTS
+  // PROJECT MANAGEMENT
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = projectForm.name.trim();
-
     if (!name) return;
 
     const duplicate = projects.some(
@@ -327,24 +348,17 @@ function App() {
     setTasks((previous) =>
       previous.map((task) =>
         task.projectId === project.id
-          ? {
-              ...task,
-              projectId: undefined,
-            }
+          ? { ...task, projectId: undefined }
           : task,
       ),
     );
 
     if (taskFilters.project === project.id) {
-      updateTaskFilters({
-        project: "all",
-      });
+      updateTaskFilters({ project: "all" });
     }
 
     if (taskForm.projectId === project.id) {
-      updateTaskForm({
-        projectId: "",
-      });
+      updateTaskForm({ projectId: "" });
     }
 
     if (projectForm.editingId === project.id) {
@@ -363,7 +377,7 @@ function App() {
     setPage("tasks");
   }
 
-  // CALENDAR ACTIONS
+  // CALENDAR INTEGRATION
 
   function addTaskFromCalendar(date: string) {
     setTaskForm({
@@ -388,6 +402,8 @@ function App() {
       startEditTask(task);
     }
   }
+
+  // APPLICATION LAYOUT
 
   return (
     <div className="app">
@@ -441,6 +457,14 @@ function App() {
             projects={projects}
             onAddTask={addTaskFromCalendar}
             onOpenTask={openTaskFromCalendar}
+          />
+        )}
+
+        {page === "ai" && (
+          <AIAssistant
+            projects={projects}
+            onCreateTask={createTaskFromAssistant}
+            onOpenTasks={() => setPage("tasks")}
           />
         )}
       </main>

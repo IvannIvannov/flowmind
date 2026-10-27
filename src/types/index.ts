@@ -4,7 +4,7 @@ export type TaskStatus = "todo" | "in-progress" | "completed";
 
 export type TaskSort = "newest" | "oldest" | "priority" | "due-date";
 
-export type Page = "dashboard" | "tasks" | "projects" | "calendar";
+export type Page = "dashboard" | "tasks" | "projects" | "calendar" | "ai";
 
 export interface Task {
   id: string;
