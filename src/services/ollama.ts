@@ -4,6 +4,8 @@ import type { Priority, Project } from "../types";
 const OLLAMA_URL = "http://127.0.0.1:11434/api/generate";
 const MODEL_NAME = "gemma3:1b";
 
+export type SuggestionOrigin = "ai" | "fallback";
+
 export interface SuggestedTask {
   id: string;
   title: string;
@@ -11,6 +13,8 @@ export interface SuggestedTask {
   dueDate: string;
   projectId: string;
   selected: boolean;
+  sourceText: string;
+  origin: SuggestionOrigin;
 }
 
 export interface ExtractionResult {
@@ -52,50 +56,34 @@ const MONTHS: Record<string, number> = {
 const DAY_NAMES = Object.keys(WEEKDAYS).join("|");
 const MONTH_NAMES = Object.keys(MONTHS).join("|");
 
-const DATE_PATTERN = new RegExp(
-  [
-    "до края на седмицата",
-    "до края на месеца",
-    "вдругиден",
-    "утре",
-    "днес",
-    "след\\s+\\d{1,3}\\s+дни?",
-    "(?:на\\s+|до\\s+)?\\d{4}-\\d{2}-\\d{2}",
-    "(?:на\\s+|до\\s+)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?",
-    `(?:на\\s+|до\\s+)?\\d{1,2}\\s+(?:${MONTH_NAMES})(?:\\s+\\d{4})?`,
-    `(?:(?:другата|другия|следващата|следващия)\\s+)?(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})`,
-  ].join("|"),
-  "giu",
-);
+function normalize(value: string): string {
+  return value.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalize(text: string): string {
-  return text.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
-}
-
 function dateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function makeDate(year: number, month: number, day: number): Date | null {
-  const result = new Date(year, month - 1, day);
+function createDate(year: number, month: number, day: number): Date | null {
+  const date = new Date(year, month - 1, day);
 
   if (
-    result.getFullYear() !== year ||
-    result.getMonth() !== month - 1 ||
-    result.getDate() !== day
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
   ) {
     return null;
   }
 
-  return result;
+  return date;
 }
 
 function addDays(date: Date, count: number): Date {
@@ -103,19 +91,6 @@ function addDays(date: Date, count: number): Date {
 
   result.setDate(result.getDate() + count);
   return result;
-}
-
-function upcomingWeekday(today: Date, target: number): Date {
-  const offset = (target - today.getDay() + 7) % 7;
-
-  return addDays(today, offset);
-}
-
-function weekdayNextWeek(today: Date, target: number): Date {
-  const weekdayFromMonday = (today.getDay() + 6) % 7;
-  const nextMonday = addDays(today, 7 - weekdayFromMonday);
-
-  return addDays(nextMonday, (target + 6) % 7);
 }
 
 function resolveDate(expression: string, today: Date): string {
@@ -151,7 +126,7 @@ function resolveDate(expression: string, today: Date): string {
   const iso = text.match(/^(?:на\s+|до\s+)?(\d{4})-(\d{2})-(\d{2})$/);
 
   if (iso) {
-    const result = makeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    const result = createDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
 
     return result ? dateKey(result) : "";
   }
@@ -163,15 +138,16 @@ function resolveDate(expression: string, today: Date): string {
   if (numeric) {
     const day = Number(numeric[1]);
     const month = Number(numeric[2]);
+
     let year = numeric[3] ? Number(numeric[3]) : today.getFullYear();
 
-    let result = makeDate(year, month, day);
+    let result = createDate(year, month, day);
 
     if (!result) return "";
 
     if (!numeric[3] && dateKey(result) < dateKey(today)) {
       year += 1;
-      result = makeDate(year, month, day);
+      result = createDate(year, month, day);
     }
 
     return result ? dateKey(result) : "";
@@ -187,13 +163,13 @@ function resolveDate(expression: string, today: Date): string {
 
     let year = natural[3] ? Number(natural[3]) : today.getFullYear();
 
-    let result = makeDate(year, month, day);
+    let result = createDate(year, month, day);
 
     if (!result) return "";
 
     if (!natural[3] && dateKey(result) < dateKey(today)) {
       year += 1;
-      result = makeDate(year, month, day);
+      result = createDate(year, month, day);
     }
 
     return result ? dateKey(result) : "";
@@ -210,27 +186,46 @@ function resolveDate(expression: string, today: Date): string {
   if (weekday) {
     const target = WEEKDAYS[weekday[2]];
 
-    return dateKey(
-      weekday[1]
-        ? weekdayNextWeek(today, target)
-        : upcomingWeekday(today, target),
-    );
+    if (weekday[1]) {
+      const mondayOffset = (today.getDay() + 6) % 7;
+
+      const nextMonday = addDays(today, 7 - mondayOffset);
+
+      return dateKey(addDays(nextMonday, (target + 6) % 7));
+    }
+
+    const offset = (target - today.getDay() + 7) % 7;
+
+    return dateKey(addDays(today, offset));
   }
 
   return "";
 }
 
 function findDates(section: string): string[] {
-  return Array.from(section.matchAll(DATE_PATTERN), (match) => match[0].trim());
+  const pattern = new RegExp(
+    [
+      "до края на седмицата",
+      "до края на месеца",
+      "вдругиден",
+      "утре",
+      "днес",
+      "след\\s+\\d{1,3}\\s+дни?",
+      "(?:на\\s+|до\\s+)?\\d{4}-\\d{2}-\\d{2}",
+      "(?:на\\s+|до\\s+)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?",
+      `(?:на\\s+|до\\s+)?\\d{1,2}\\s+(?:${MONTH_NAMES})(?:\\s+\\d{4})?`,
+      `(?:(?:другата|другия|следващата|следващия)\\s+)?(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})`,
+    ].join("|"),
+    "giu",
+  );
+
+  return Array.from(section.matchAll(pattern), (match) => match[0].trim());
 }
 
 function getDeadline(
   section: string,
   today: Date,
-): {
-  date: string;
-  warning: string;
-} {
+): { date: string; warning: string } {
   const dates = findDates(section)
     .map((expression) => resolveDate(expression, today))
     .filter(Boolean);
@@ -238,23 +233,18 @@ function getDeadline(
   const uniqueDates = [...new Set(dates)];
 
   if (uniqueDates.length === 0) {
-    return {
-      date: "",
-      warning: "",
-    };
+    return { date: "", warning: "" };
   }
 
   if (uniqueDates.length === 1) {
-    return {
-      date: uniqueDates[0],
-      warning: "",
-    };
+    return { date: uniqueDates[0], warning: "" };
   }
 
   return {
     date: "",
     warning:
-      `Multiple dates in "${section}". ` + "Please set the deadline manually.",
+      `Multiple dates found in "${section}". ` +
+      "Please set the deadline manually.",
   };
 }
 
@@ -275,31 +265,29 @@ function getPriority(section: string): Priority {
 function findProject(value: unknown, projects: Project[]): string {
   if (typeof value !== "string") return "";
 
-  const requested = normalize(value);
+  const name = normalize(value);
 
-  const match = projects.find(
-    (project) => normalize(project.name) === requested,
-  );
+  const project = projects.find((item) => normalize(item.name) === name);
 
-  return match?.id ?? "";
+  return project?.id ?? "";
 }
 
-function guessProjectFromSection(section: string, projects: Project[]): string {
-  const text = normalize(section);
+function guessProject(section: string, projects: Project[]): string {
+  const source = normalize(section);
 
-  const matches = projects.filter(
+  const matched = projects.filter(
     (project) =>
-      project.name.trim().length > 0 && text.includes(normalize(project.name)),
+      project.name.trim() && source.includes(normalize(project.name)),
   );
 
-  return matches.length === 1 ? matches[0].id : "";
+  return matched.length === 1 ? matched[0].id : "";
 }
 
 function splitNote(note: string): string[] {
   return note
     .replace(/\r\n/g, "\n")
     .split(/\n+|[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
-    .map((section) => section.trim())
+    .map((part) => part.trim())
     .filter(Boolean);
 }
 
@@ -309,10 +297,10 @@ function isClearlyPastInformation(section: string): boolean {
   const pastStart =
     /^(?:(?:днес|вчера)\s+)?(?:проведохме|обсъдихме|приключихме|завършихме|получихме)(?:\s|$)/u;
 
-  const pendingAction =
+  const pending =
     /трябва|предстои|необходимо|да\s+(?:изпратя|направя|подготвя|монтирам|проверя|организирам)/u;
 
-  return pastStart.test(text) && !pendingAction.test(text);
+  return pastStart.test(text) && !pending.test(text);
 }
 
 function looksLikePendingAction(section: string): boolean {
@@ -320,7 +308,7 @@ function looksLikePendingAction(section: string): boolean {
 
   return (
     /трябва\s+да|необходимо\s+е\s+да|предстои\s+да/u.test(text) ||
-    /(?:^|\s)да\s+(?:изпратя|пратя|подготвя|монтирам|проверя|организирам|направя|създам|публикувам|снимам|обработя|редактирам|качa|кача)(?:\s|$)/u.test(
+    /(?:^|\s)да\s+(?:изпратя|пратя|подготвя|монтирам|проверя|организирам|направя|създам|публикувам|снимам|обработя|редактирам|кача)(?:\s|$)/u.test(
       text,
     ) ||
     /^(?:изпрати|подготви|монтирай|провери|организирай|направи|създай|публикувай|снимай)(?:\s|$)/u.test(
@@ -332,25 +320,20 @@ function looksLikePendingAction(section: string): boolean {
 function fallbackTitle(section: string): string {
   let title = section.trim();
 
-  // Remove clearly recognized dates without
-  // deleting the actual action.
   for (const expression of findDates(title)) {
     title = title.replace(expression, " ");
   }
 
   title = title
-    .replace(/^\s*за\s+/iu, "За ")
-    .replace(/\bтрябва\s+да\s+/iu, "")
-    .replace(/\bнеобходимо\s+е\s+да\s+/iu, "")
-    .replace(/\bпредстои\s+да\s+/iu, "")
+    .replace(/трябва\s+да\s+/iu, "")
+    .replace(/необходимо\s+е\s+да\s+/iu, "")
+    .replace(/предстои\s+да\s+/iu, "")
     .replace(/^\s*да\s+/iu, "")
     .replace(/\s+/g, " ")
     .replace(/^[,;:\s]+|[,;:\s.]+$/g, "")
     .trim();
 
-  if (!title) {
-    return section.trim().slice(0, 200);
-  }
+  if (!title) title = section.trim();
 
   return (title.charAt(0).toLocaleUpperCase("bg-BG") + title.slice(1)).slice(
     0,
@@ -358,21 +341,18 @@ function fallbackTitle(section: string): string {
   );
 }
 
-function makeSuggestedTask(
+function makeSuggestion(
   title: string,
   section: string,
   projects: Project[],
   today: Date,
   proposedProject: unknown,
+  origin: SuggestionOrigin,
 ): {
   task: SuggestedTask;
   warning: string;
 } {
   const deadline = getDeadline(section, today);
-
-  const projectId =
-    findProject(proposedProject, projects) ||
-    guessProjectFromSection(section, projects);
 
   return {
     task: {
@@ -380,8 +360,12 @@ function makeSuggestedTask(
       title: title.trim().slice(0, 200),
       priority: getPriority(section),
       dueDate: deadline.date,
-      projectId,
+      projectId:
+        findProject(proposedProject, projects) ||
+        guessProject(section, projects),
       selected: true,
+      sourceText: section,
+      origin,
     },
     warning: deadline.warning,
   };
@@ -407,31 +391,27 @@ const RESPONSE_SCHEMA = {
 
 function buildPrompt(section: string, projects: Project[]): string {
   return `
-You extract pending tasks from Bulgarian text.
+Extract pending tasks from Bulgarian notes.
 
 AVAILABLE PROJECTS:
 ${JSON.stringify(projects.map((p) => p.name))}
 
-Return ONLY JSON in this format:
+Return JSON:
 {"tasks":[{"title":"...","projectName":""}]}
 
-Rules:
-- Extract actions still needing to be done.
-- Do not create a task for an event that already happened.
+RULES:
+- Include actions that still need to be done.
+- Exclude meetings or events that already happened.
 - Keep all explicit pending actions.
-- Use short Bulgarian titles.
-- Do not invent subtasks.
+- Short Bulgarian task titles.
+- No invented actions or subtasks.
 - Use an available project name only if certain.
-- Otherwise projectName must be "".
-- If there are no pending actions, return {"tasks":[]}.
+- Otherwise set projectName to "".
+- If no pending actions, return {"tasks":[]}.
 
-Examples:
-
-INPUT: До петък трябва да изпратя имейл на Юлия.
-OUTPUT: {"tasks":[{"title":"Изпрати имейл на Юлия","projectName":""}]}
-
-INPUT: Трябва да проверя получените материали.
-OUTPUT: {"tasks":[{"title":"Провери получените материали","projectName":""}]}
+EXAMPLES:
+INPUT: До петък трябва да изпратя имейл.
+OUTPUT: {"tasks":[{"title":"Изпрати имейл","projectName":""}]}
 
 INPUT: Днес проведохме среща.
 OUTPUT: {"tasks":[]}
@@ -449,14 +429,11 @@ async function analyzeSection(
   today: Date,
 ): Promise<SectionResult> {
   if (isClearlyPastInformation(section)) {
-    return {
-      tasks: [],
-      warnings: [],
-    };
+    return { tasks: [], warnings: [] };
   }
 
-  const warnings: string[] = [];
   const tasks: SuggestedTask[] = [];
+  const warnings: string[] = [];
 
   let modelTasks: unknown[] = [];
   let aiFailed = false;
@@ -482,13 +459,13 @@ async function analyzeSection(
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama HTTP ${response.status}`);
+      throw new Error(`Ollama returned HTTP ${response.status}`);
     }
 
     const data: unknown = await response.json();
 
     if (!isRecord(data) || typeof data.response !== "string") {
-      throw new Error("Invalid Ollama response");
+      throw new Error("Unexpected Ollama response");
     }
 
     const parsed: unknown = JSON.parse(data.response);
@@ -499,8 +476,7 @@ async function analyzeSection(
 
     modelTasks = parsed.tasks;
   } catch (error) {
-    console.error("AI section analysis failed:", error);
-
+    console.error("Ollama section error:", error);
     aiFailed = true;
   }
 
@@ -513,55 +489,47 @@ async function analyzeSection(
       continue;
     }
 
-    // For sections that clearly describe
-    // future actions, dates come from the
-    // original text, never from the AI.
-    const suggestion = makeSuggestedTask(
+    const result = makeSuggestion(
       item.title,
       section,
       projects,
       today,
       item.projectName,
+      "ai",
     );
 
-    tasks.push(suggestion.task);
+    tasks.push(result.task);
 
-    if (suggestion.warning) {
-      warnings.push(suggestion.warning);
+    if (result.warning) {
+      warnings.push(result.warning);
     }
   }
 
-  // Fallback: a clear pending action must
-  // not disappear just because the small
-  // AI model returned an empty list.
   if (tasks.length === 0 && looksLikePendingAction(section)) {
-    const suggestion = makeSuggestedTask(
+    const result = makeSuggestion(
       fallbackTitle(section),
       section,
       projects,
       today,
       "",
+      "fallback",
     );
 
-    tasks.push(suggestion.task);
+    tasks.push(result.task);
 
     warnings.push(
-      `AI did not confirm this action. ` +
-        `A draft was created from the original text: "${section}". ` +
-        "Please review its title and deadline.",
+      `Fallback suggestion created from: "${section}". ` +
+        "Review its title and deadline.",
     );
 
-    if (suggestion.warning) {
-      warnings.push(suggestion.warning);
+    if (result.warning) {
+      warnings.push(result.warning);
     }
   } else if (tasks.length === 0 && aiFailed) {
     warnings.push(`Could not analyze this section: "${section}".`);
   }
 
-  return {
-    tasks,
-    warnings,
-  };
+  return { tasks, warnings };
 }
 
 export async function extractTasksWithOllama(
@@ -590,8 +558,6 @@ export async function extractTasksWithOllama(
 
   const results: SectionResult[] = [];
 
-  // Sequential processing is predictable
-  // for one locally running AI model.
   for (const section of sections) {
     const result = await analyzeSection(section, projects, today);
 
