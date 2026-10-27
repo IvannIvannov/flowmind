@@ -7,15 +7,16 @@ import Projects from "./components/Projects/Projects";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Tasks from "./components/Tasks/Tasks";
 
-import type { Page } from "./components/Sidebar/Sidebar";
-import type { Project, ProjectFormState } from "./components/Projects/Projects";
 import type {
+  Page,
   Priority,
   Task,
   TaskStatus,
   TaskFormState,
   TaskFilters,
-} from "./components/Tasks/Tasks";
+  Project,
+  ProjectFormState,
+} from "./types";
 
 import {
   loadTasks,
@@ -67,6 +68,7 @@ function App() {
   const [page, setPage] = useState<Page>("dashboard");
 
   const [tasks, setTasks] = useState<Task[]>(loadTasks);
+
   const [projects, setProjects] = useState<Project[]>(loadProjects);
 
   const [taskForm, setTaskForm] = useState<TaskFormState>(INITIAL_TASK_FORM);
@@ -76,7 +78,7 @@ function App() {
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  // PERSISTENCE
+  // SAVE DATA
 
   useEffect(() => {
     saveTasks(tasks);
@@ -132,7 +134,7 @@ function App() {
       });
   }, [tasks, projects, taskFilters]);
 
-  // TASK MANAGEMENT
+  // TASK FORM
 
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
@@ -152,10 +154,13 @@ function App() {
     setTaskForm({ ...INITIAL_TASK_FORM });
   }
 
+  // CREATE AND EDIT TASKS
+
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = taskForm.title.trim();
+
     if (!name) return;
 
     const projectId = projects.some(
@@ -232,7 +237,7 @@ function App() {
     }
   }
 
-  // PROJECT MANAGEMENT
+  // PROJECT FORM
 
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
@@ -242,13 +247,18 @@ function App() {
   }
 
   function resetProjectForm() {
-    setProjectForm({ ...INITIAL_PROJECT_FORM });
+    setProjectForm({
+      ...INITIAL_PROJECT_FORM,
+    });
   }
+
+  // CREATE AND EDIT PROJECTS
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = projectForm.name.trim();
+
     if (!name) return;
 
     const duplicate = projects.some(
@@ -353,7 +363,7 @@ function App() {
     setPage("tasks");
   }
 
-  // CALENDAR INTEGRATION
+  // CALENDAR ACTIONS
 
   function addTaskFromCalendar(date: string) {
     setTaskForm({
@@ -378,8 +388,6 @@ function App() {
       startEditTask(task);
     }
   }
-
-  // APP LAYOUT
 
   return (
     <div className="app">

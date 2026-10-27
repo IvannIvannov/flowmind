@@ -1,33 +1,14 @@
+import type { Task, Project, DashboardStats } from "../../types";
+
+import { getTodayKey, isOverdue } from "../../utils/dates";
+
 import "./Dashboard.css";
 
-export interface DashboardTask {
-  id: string;
-  status: "todo" | "in-progress" | "completed";
-  projectId?: string;
-  dueDate?: string;
-}
-
-export interface DashboardProject {
-  id: string;
-  name: string;
-  color: string;
-}
-
 interface DashboardProps {
-  tasks: DashboardTask[];
-  projects: DashboardProject[];
+  tasks: Task[];
+  projects: Project[];
   onOpenTasks: () => void;
   onOpenProjects: () => void;
-}
-
-function getLocalDate(): string {
-  const date = new Date();
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
 
 function Dashboard({
@@ -36,62 +17,61 @@ function Dashboard({
   onOpenTasks,
   onOpenProjects,
 }: DashboardProps) {
-  const today = getLocalDate();
+  const today = getTodayKey();
 
-  const total = tasks.length;
+  const stats: DashboardStats = {
+    total: tasks.length,
 
-  const inProgress = tasks.filter(
-    (task) => task.status === "in-progress",
-  ).length;
+    inProgress: tasks.filter((task) => task.status === "in-progress").length,
 
-  const completed = tasks.filter((task) => task.status === "completed").length;
+    completed: tasks.filter((task) => task.status === "completed").length,
 
-  const dueToday = tasks.filter(
-    (task) => task.status !== "completed" && task.dueDate === today,
-  ).length;
+    dueToday: tasks.filter(
+      (task) => task.status !== "completed" && task.dueDate === today,
+    ).length,
 
-  const overdue = tasks.filter(
-    (task) =>
-      task.status !== "completed" &&
-      Boolean(task.dueDate) &&
-      task.dueDate! < today,
-  ).length;
+    overdue: tasks.filter((task) =>
+      isOverdue(task.dueDate, task.status === "completed"),
+    ).length,
 
-  const stats = [
+    projects: projects.length,
+  };
+
+  const statisticCards = [
     {
       id: "total",
       title: "Total Tasks",
-      value: total,
+      value: stats.total,
       description: "All your tasks",
     },
     {
       id: "in-progress",
       title: "In Progress",
-      value: inProgress,
+      value: stats.inProgress,
       description: "Active work",
     },
     {
       id: "completed",
       title: "Completed",
-      value: completed,
+      value: stats.completed,
       description: "Finished tasks",
     },
     {
       id: "today",
       title: "Due Today",
-      value: dueToday,
+      value: stats.dueToday,
       description: "Need attention today",
     },
     {
       id: "overdue",
       title: "Overdue",
-      value: overdue,
+      value: stats.overdue,
       description: "Past their deadline",
     },
     {
       id: "projects",
       title: "Projects",
-      value: projects.length,
+      value: stats.projects,
       description: "Your workspaces",
     },
   ];
@@ -125,7 +105,7 @@ function Dashboard({
       </section>
 
       <section className="fm-dashboard-stats" aria-label="Task statistics">
-        {stats.map((stat) => (
+        {statisticCards.map((stat) => (
           <div className="fm-dashboard-stat-card" key={stat.id}>
             <p>{stat.title}</p>
 
