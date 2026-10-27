@@ -1,0 +1,230 @@
+/* FLOWMIND DASHBOARD */
+
+.fm-dashboard {
+    width: 100%;
+    min-width: 0;
+}
+
+/* HEADER */
+
+.fm-dashboard-header {
+    margin-bottom: 35px;
+}
+
+.fm-dashboard-subtitle {
+    color: #a78bfa;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 12px;
+}
+
+.fm-dashboard-header h1 {
+    font-size: 34px;
+    color: #ffffff;
+    margin: 0 0 12px;
+}
+
+.fm-dashboard-description {
+    color: #989eae;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+/* WELCOME CARD */
+
+.fm-dashboard-welcome {
+    background: linear-gradient(135deg,
+            #262238,
+            #1d2030);
+    border: 1px solid #39324c;
+    border-radius: 18px;
+    padding: 30px;
+    margin-bottom: 25px;
+}
+
+.fm-dashboard-welcome-icon {
+    font-size: 28px;
+    margin-bottom: 14px;
+}
+
+.fm-dashboard-welcome h2 {
+    font-size: 22px;
+    margin: 0 0 10px;
+    color: #ffffff;
+}
+
+.fm-dashboard-welcome p {
+    color: #adb0bf;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.fm-dashboard-primary-button {
+    background: #8b5cf6;
+    color: #ffffff;
+    border: none;
+    padding: 13px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    margin-top: 20px;
+    transition: background 0.2s;
+}
+
+.fm-dashboard-primary-button:hover {
+    background: #7c3aed;
+}
+
+/* STATISTICS */
+
+.fm-dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.fm-dashboard-stat-card {
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 16px;
+    padding: 25px;
+}
+
+.fm-dashboard-stat-card p {
+    color: #a3a8b8;
+    font-size: 14px;
+    margin: 0;
+}
+
+.fm-dashboard-stat-card h2 {
+    color: #ffffff;
+    font-size: 36px;
+    margin: 15px 0;
+}
+
+.fm-dashboard-stat-card span {
+    color: #777e91;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.fm-dashboard-danger {
+    color: #fda4af !important;
+}
+
+/* PROJECT PREVIEW */
+
+.fm-dashboard-projects {
+    margin-top: 35px;
+}
+
+.fm-dashboard-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 22px;
+}
+
+.fm-dashboard-section-heading h2 {
+    font-size: 20px;
+    color: #ffffff;
+    margin: 0;
+}
+
+.fm-dashboard-text-button {
+    background: transparent;
+    border: none;
+    color: #c4b5fd;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.fm-dashboard-project-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.fm-dashboard-project-card {
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 0;
+}
+
+.fm-dashboard-project-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fm-dashboard-project-title h3 {
+    color: #ffffff;
+    font-size: 17px;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.fm-dashboard-project-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.fm-dashboard-project-card>p {
+    color: #a3a8b8;
+    font-size: 13px;
+    margin: 20px 0 12px;
+}
+
+.fm-dashboard-progress-track {
+    height: 8px;
+    background: #353746;
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.fm-dashboard-progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.2s;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1200px) {
+
+    .fm-dashboard-stats,
+    .fm-dashboard-project-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 850px) {
+
+    .fm-dashboard-stats,
+    .fm-dashboard-project-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 650px) {
+    .fm-dashboard-header h1 {
+        font-size: 27px;
+    }
+
+    .fm-dashboard-welcome {
+        padding: 22px;
+    }
+
+    .fm-dashboard-stat-card {
+        padding: 20px;
+    }
+}

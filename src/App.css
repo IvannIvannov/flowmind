@@ -1,6 +1,4 @@
-/* FLOWMIND v0.4.0 */
-
-/* BASE LAYOUT */
+/* FLOWMIND - APPLICATION LAYOUT */
 
 .app {
     display: flex;
@@ -8,74 +6,16 @@
     width: 100%;
 }
 
-.sidebar {
-    width: 250px;
-    min-width: 250px;
-    min-height: 100vh;
-    background: #171923;
-    border-right: 1px solid #2b2e3b;
-    padding: 30px 18px;
-    display: flex;
-    flex-direction: column;
-}
-
-.logo {
-    font-size: 25px;
-    color: #ffffff;
-    margin: 5px 10px 45px;
-}
-
-.navigation {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.nav-item {
-    width: 100%;
-    padding: 14px 16px;
-    background: transparent;
-    border: none;
-    border-radius: 10px;
-    color: #aeb5c6;
-    text-align: left;
-    font-size: 15px;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-}
-
-.nav-item.active {
-    background: #38314f;
-    color: #c4b5fd;
-    font-weight: 600;
-}
-
-.nav-item:hover:not(:disabled) {
-    background: #252938;
-    color: #ffffff;
-}
-
-.nav-item:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-.sidebar-footer {
-    margin-top: auto;
-    padding: 15px 10px;
-    color: #71788c;
-    font-size: 12px;
-}
-
-/* CONTENT */
-
 .content {
     flex: 1;
     min-width: 0;
+    min-height: 100vh;
     padding: 50px;
     background: #101116;
     overflow-y: auto;
 }
+
+/* COMMON PAGE HEADERS */
 
 .page-header {
     margin-bottom: 35px;
@@ -91,7 +31,7 @@
 
 .page-header h1 {
     font-size: 34px;
-    color: white;
+    color: #ffffff;
     margin: 0 0 12px;
 }
 
@@ -101,69 +41,6 @@
     line-height: 1.6;
 }
 
-/* DASHBOARD */
-
-.welcome-card {
-    background: linear-gradient(135deg, #262238, #1d2030);
-    border: 1px solid #39324c;
-    border-radius: 18px;
-    padding: 30px;
-    margin-bottom: 25px;
-}
-
-.card-icon {
-    font-size: 28px;
-    margin-bottom: 14px;
-}
-
-.welcome-card h2 {
-    font-size: 22px;
-    margin: 0 0 10px;
-}
-
-.welcome-card p {
-    color: #adb0bf;
-    margin: 0;
-    line-height: 1.6;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 20px;
-}
-
-.stat-card {
-    padding: 25px;
-    background: #1b1d28;
-    border: 1px solid #2d3040;
-    border-radius: 16px;
-}
-
-.stat-card p {
-    color: #a3a8b8;
-    font-size: 14px;
-    margin: 0;
-}
-
-.stat-card h2 {
-    font-size: 36px;
-    margin: 15px 0;
-}
-
-.stat-card span {
-    color: #777e91;
-    font-size: 12px;
-}
-
-.danger-text {
-    color: #fda4af;
-}
-
-.dashboard-projects {
-    margin-top: 35px;
-}
-
 /* COMMON BUTTONS */
 
 .primary-button,
@@ -171,7 +48,8 @@
     border: none;
     border-radius: 10px;
     padding: 13px 20px;
-    color: white;
+    color: #ffffff;
+    font-family: inherit;
     font-weight: 600;
     font-size: 13px;
     cursor: pointer;
@@ -183,10 +61,6 @@
 
 .primary-button:hover {
     background: #7c3aed;
-}
-
-.welcome-card .primary-button {
-    margin-top: 20px;
 }
 
 .secondary-button {
@@ -202,6 +76,7 @@
     background: transparent;
     color: #c4b5fd;
     cursor: pointer;
+    font-family: inherit;
     font-size: 13px;
 }
 
@@ -238,7 +113,7 @@ textarea:focus-visible {
     outline-offset: 2px;
 }
 
-/* PANELS */
+/* CONTENT PANELS */
 
 .task-panel {
     background: #1b1d28;
@@ -272,7 +147,7 @@ textarea:focus-visible {
     font-size: 13px;
 }
 
-/* FORMS */
+/* TASK FORM */
 
 .task-form {
     display: flex;
@@ -329,8 +204,8 @@ input[type="date"] {
 .form-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
     align-items: center;
+    gap: 10px;
 }
 
 /* TASK FILTERS */
@@ -393,6 +268,8 @@ input[type="date"] {
     align-items: center;
     gap: 9px;
 }
+
+/* TASK BADGES */
 
 .priority,
 .deadline,
@@ -474,7 +351,7 @@ input[type="date"] {
 }
 
 .empty-state h3 {
-    color: white;
+    color: #ffffff;
     margin-bottom: 8px;
 }
 
@@ -482,7 +359,7 @@ input[type="date"] {
     font-size: 13px;
 }
 
-/* PROJECTS */
+/* PROJECT FORM */
 
 .project-form {
     display: flex;
@@ -514,9 +391,11 @@ input[type="date"] {
 }
 
 .color-choice.selected {
-    outline: 2px solid white;
+    outline: 2px solid #ffffff;
     outline-offset: 3px;
 }
+
+/* PROJECT LIST */
 
 .projects-title {
     margin: 35px 0 22px;
@@ -579,7 +458,7 @@ input[type="date"] {
 }
 
 .project-progress-label strong {
-    color: white;
+    color: #ffffff;
 }
 
 .progress-track {
@@ -603,12 +482,10 @@ input[type="date"] {
     margin-top: 24px;
 }
 
-/* RESPONSIVE */
+/* RESPONSIVE LAYOUT */
 
 @media (max-width: 1200px) {
-
-    .project-grid,
-    .stats-grid {
+    .project-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -623,38 +500,16 @@ input[type="date"] {
 }
 
 @media (max-width: 850px) {
-    .sidebar {
-        width: 200px;
-        min-width: 200px;
-    }
-
     .content {
         padding: 30px 24px;
     }
 
-    .project-grid,
-    .stats-grid {
+    .project-grid {
         grid-template-columns: 1fr;
     }
 }
 
 @media (max-width: 650px) {
-    .sidebar {
-        width: 165px;
-        min-width: 165px;
-        padding: 22px 10px;
-    }
-
-    .logo {
-        font-size: 20px;
-        margin-left: 8px;
-    }
-
-    .nav-item {
-        padding: 12px 9px;
-        font-size: 12px;
-    }
-
     .content {
         padding: 24px 16px;
     }

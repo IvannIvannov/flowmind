@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Calendar from "./components/Calendar/Calendar";
+import Dashboard from "./components/Dashboard/Dashboard";
 import Sidebar from "./components/Sidebar/Sidebar";
 import type { Page } from "./components/Sidebar/Sidebar";
 import "./App.css";
@@ -153,22 +154,6 @@ function App() {
     }
   }, [projects]);
 
-  const stats = useMemo(
-    () => ({
-      total: tasks.length,
-      inProgress: tasks.filter((task) => task.status === "in-progress").length,
-      completed: tasks.filter((task) => task.status === "completed").length,
-      dueToday: tasks.filter(
-        (task) => task.status !== "completed" && task.dueDate === today,
-      ).length,
-      overdue: tasks.filter(
-        (task) =>
-          task.status !== "completed" && task.dueDate && task.dueDate < today,
-      ).length,
-    }),
-    [tasks, today],
-  );
-
   const visibleTasks = useMemo(() => {
     return tasks
       .filter((task) => {
@@ -193,14 +178,17 @@ function App() {
           const diff = PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
           if (diff) return diff;
         }
+
         if (sort === "due-date") {
           return (a.dueDate || "9999-12-31").localeCompare(
             b.dueDate || "9999-12-31",
           );
         }
+
         if (sort === "oldest") {
           return a.createdAt.localeCompare(b.createdAt);
         }
+
         return b.createdAt.localeCompare(a.createdAt);
       });
   }, [tasks, projects, search, statusFilter, projectFilter, sort]);
@@ -215,6 +203,7 @@ function App() {
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const name = title.trim();
     if (!name) return;
 
@@ -288,6 +277,7 @@ function App() {
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const name = projectName.trim();
     if (!name) return;
 
@@ -377,6 +367,7 @@ function App() {
       if (task.dueDate < today) {
         return `Overdue: ${formattedDate(task.dueDate)}`;
       }
+
       if (task.dueDate === today) return "Due today";
     }
 
@@ -417,104 +408,12 @@ function App() {
 
       <main className="content">
         {page === "dashboard" && (
-          <>
-            <header className="page-header">
-              <p className="subtitle">YOUR PERSONAL WORKSPACE</p>
-              <h1>Welcome to FlowMind 👋</h1>
-              <p className="description">
-                Organize your tasks, projects and ideas in one place.
-              </p>
-            </header>
-
-            <section className="welcome-card">
-              <div className="card-icon">✨</div>
-              <h2>Your workspace is ready!</h2>
-              <p>Stay organized and focus on what matters most.</p>
-              <button
-                className="primary-button"
-                onClick={() => setPage("tasks")}
-              >
-                Manage Tasks →
-              </button>
-            </section>
-
-            <section className="stats-grid">
-              {[
-                ["Total Tasks", stats.total, "All your tasks"],
-                ["In Progress", stats.inProgress, "Active work"],
-                ["Completed", stats.completed, "Finished tasks"],
-                ["Due Today", stats.dueToday, "Need attention today"],
-                ["Overdue", stats.overdue, "Past their deadline"],
-                ["Projects", projects.length, "Your workspaces"],
-              ].map(([label, value, description]) => (
-                <div className="stat-card" key={label}>
-                  <p>{label}</p>
-                  <h2
-                    className={
-                      label === "Overdue" && stats.overdue > 0
-                        ? "danger-text"
-                        : ""
-                    }
-                  >
-                    {value}
-                  </h2>
-                  <span>{description}</span>
-                </div>
-              ))}
-            </section>
-
-            {projects.length > 0 && (
-              <section className="dashboard-projects">
-                <div className="section-heading">
-                  <h2>Your Projects</h2>
-                  <button
-                    className="text-button"
-                    onClick={() => setPage("projects")}
-                  >
-                    View all →
-                  </button>
-                </div>
-
-                <div className="project-grid">
-                  {projects.slice(0, 3).map((project) => {
-                    const items = tasks.filter(
-                      (task) => task.projectId === project.id,
-                    );
-                    const done = items.filter(
-                      (task) => task.status === "completed",
-                    ).length;
-                    const percent = items.length
-                      ? Math.round((done / items.length) * 100)
-                      : 0;
-
-                    return (
-                      <div className="project-card" key={project.id}>
-                        <div className="project-card-top">
-                          <span
-                            className="project-dot"
-                            style={{ backgroundColor: project.color }}
-                          />
-                          <h3>{project.name}</h3>
-                        </div>
-                        <p>
-                          {items.length} tasks · {percent}% complete
-                        </p>
-                        <div className="progress-track">
-                          <div
-                            className="progress-fill"
-                            style={{
-                              width: `${percent}%`,
-                              backgroundColor: project.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-          </>
+          <Dashboard
+            tasks={tasks}
+            projects={projects}
+            onOpenTasks={() => setPage("tasks")}
+            onOpenProjects={() => setPage("projects")}
+          />
         )}
 
         {page === "tasks" && (
@@ -533,6 +432,7 @@ function App() {
               <form className="task-form" onSubmit={submitTask}>
                 <div className="form-field title-field">
                   <label htmlFor="task-title">Task Name</label>
+
                   <input
                     id="task-title"
                     value={title}
@@ -545,6 +445,7 @@ function App() {
 
                 <div className="form-field">
                   <label htmlFor="task-priority">Priority</label>
+
                   <select
                     id="task-priority"
                     value={priority}
@@ -560,6 +461,7 @@ function App() {
 
                 <div className="form-field">
                   <label htmlFor="task-date">Due Date</label>
+
                   <input
                     id="task-date"
                     type="date"
@@ -570,12 +472,14 @@ function App() {
 
                 <div className="form-field">
                   <label htmlFor="task-project">Project</label>
+
                   <select
                     id="task-project"
                     value={selectedProject}
                     onChange={(event) => setSelectedProject(event.target.value)}
                   >
                     <option value="">No Project</option>
+
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.name}
@@ -588,6 +492,7 @@ function App() {
                   <button type="submit" className="primary-button">
                     {editingTask ? "Save Changes" : "+ Add Task"}
                   </button>
+
                   {editingTask && (
                     <button
                       type="button"
@@ -604,8 +509,10 @@ function App() {
             <section className="task-panel">
               <div className="section-heading">
                 <h2>Your Tasks ({visibleTasks.length})</h2>
+
                 <span className="muted">
-                  {stats.completed} of {stats.total} completed
+                  {tasks.filter((t) => t.status === "completed").length} of{" "}
+                  {tasks.length} completed
                 </span>
               </div>
 
@@ -636,6 +543,7 @@ function App() {
                 >
                   <option value="all">All Projects</option>
                   <option value="none">No Project</option>
+
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
@@ -725,6 +633,7 @@ function App() {
                           </select>
 
                           <button
+                            type="button"
                             className="icon-button edit-button"
                             title="Edit task"
                             aria-label={`Edit ${task.title}`}
@@ -734,6 +643,7 @@ function App() {
                           </button>
 
                           <button
+                            type="button"
                             className="icon-button delete-button"
                             title="Delete task"
                             aria-label={`Delete ${task.title}`}
@@ -767,6 +677,7 @@ function App() {
               <form className="project-form" onSubmit={submitProject}>
                 <div className="form-field">
                   <label htmlFor="project-name">Project Name</label>
+
                   <input
                     id="project-name"
                     placeholder="e.g. University"
@@ -781,6 +692,7 @@ function App() {
                   <label htmlFor="project-description">
                     Description (Optional)
                   </label>
+
                   <textarea
                     id="project-description"
                     placeholder="What's this project about?"
@@ -795,6 +707,7 @@ function App() {
 
                 <div className="form-field">
                   <label>Project Color</label>
+
                   <div className="color-picker">
                     {COLORS.map((color) => (
                       <button
@@ -816,6 +729,7 @@ function App() {
                   <button className="primary-button" type="submit">
                     {editingProject ? "Save Project" : "+ Create Project"}
                   </button>
+
                   {editingProject && (
                     <button
                       type="button"
@@ -845,9 +759,11 @@ function App() {
                   const projectTasks = tasks.filter(
                     (task) => task.projectId === project.id,
                   );
+
                   const done = projectTasks.filter(
                     (task) => task.status === "completed",
                   ).length;
+
                   const percent = projectTasks.length
                     ? Math.round((done / projectTasks.length) * 100)
                     : 0;
@@ -887,12 +803,15 @@ function App() {
 
                       <div className="project-actions">
                         <button
+                          type="button"
                           className="secondary-button"
                           onClick={() => openProjectTasks(project.id)}
                         >
                           View Tasks
                         </button>
+
                         <button
+                          type="button"
                           className="icon-button edit-button"
                           title="Edit project"
                           aria-label={`Edit ${project.name}`}
@@ -900,7 +819,9 @@ function App() {
                         >
                           ✏️
                         </button>
+
                         <button
+                          type="button"
                           className="icon-button delete-button"
                           title="Delete project"
                           aria-label={`Delete ${project.name}`}
