@@ -1,27 +1,21 @@
 import { useMemo, useState } from "react";
+
+import type { Task, Project, Priority } from "../../types";
+
+import {
+  getTodayKey,
+  toDateKey,
+  parseDateKey,
+  formatDate,
+  changeMonth,
+  getMonthTitle,
+} from "../../utils/dates";
+
 import "./Calendar.css";
 
-type Priority = "low" | "medium" | "high";
-type TaskStatus = "todo" | "in-progress" | "completed";
-
-interface CalendarTask {
-  id: string;
-  title: string;
-  priority: Priority;
-  status: TaskStatus;
-  dueDate?: string;
-  projectId?: string;
-}
-
-interface CalendarProject {
-  id: string;
-  name: string;
-  color: string;
-}
-
 interface CalendarProps {
-  tasks: CalendarTask[];
-  projects: CalendarProject[];
+  tasks: Task[];
+  projects: Project[];
   onAddTask: (date: string) => void;
   onOpenTask: (taskId: string) => void;
 }
@@ -34,44 +28,17 @@ const PRIORITY_COLORS: Record<Priority, string> = {
   high: "#fb7185",
 };
 
-function createDateKey(year: number, month: number, day: number): string {
-  return [
-    year,
-    String(month + 1).padStart(2, "0"),
-    String(day).padStart(2, "0"),
-  ].join("-");
-}
-
-function getToday(): string {
-  const date = new Date();
-
-  return createDateKey(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function formatDate(dateString: string): string {
-  const [year, month, day] = dateString.split("-").map(Number);
-
-  return new Intl.DateTimeFormat("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
-}
-
 function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
-  const [selectedDate, setSelectedDate] = useState(getToday);
+  const [selectedDate, setSelectedDate] = useState(getTodayKey);
 
-  const today = getToday();
+  const today = getTodayKey();
 
-  const [year, month] = selectedDate.split("-").map(Number);
+  const currentDate = parseDateKey(selectedDate) ?? new Date();
 
-  const currentMonth = month - 1;
+  const year = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
 
-  const monthTitle = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date(year, currentMonth, 1));
+  const monthTitle = getMonthTitle(year, currentMonth);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(year, currentMonth, 1);
@@ -88,7 +55,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
       const date = new Date(year, currentMonth, dayNumber);
 
       return {
-        key: createDateKey(date.getFullYear(), date.getMonth(), date.getDate()),
+        key: toDateKey(date),
         number: date.getDate(),
         isCurrentMonth: date.getMonth() === currentMonth,
       };
@@ -96,7 +63,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
   }, [year, currentMonth]);
 
   const tasksByDate = useMemo(() => {
-    const map = new Map<string, CalendarTask[]>();
+    const map = new Map<string, Task[]>();
 
     tasks.forEach((task) => {
       if (!task.dueDate) return;
@@ -115,19 +82,24 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
     (task) => task.status === "completed",
   ).length;
 
-  function changeMonth(direction: number) {
-    const next = new Date(year, currentMonth + direction, 1);
-
-    setSelectedDate(createDateKey(next.getFullYear(), next.getMonth(), 1));
+  function navigateMonth(direction: number) {
+    setSelectedDate(changeMonth(selectedDate, direction));
   }
 
   function goToToday() {
-    setSelectedDate(getToday());
+    setSelectedDate(getTodayKey());
   }
 
   function findProject(projectId?: string) {
     return projects.find((project) => project.id === projectId);
   }
+
+  const selectedDateTitle = formatDate(selectedDate, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
     <div className="calendar-page">
@@ -158,7 +130,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
               <button
                 type="button"
                 aria-label="Previous month"
-                onClick={() => changeMonth(-1)}
+                onClick={() => navigateMonth(-1)}
               >
                 ‹
               </button>
@@ -166,7 +138,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
               <button
                 type="button"
                 aria-label="Next month"
-                onClick={() => changeMonth(1)}
+                onClick={() => navigateMonth(1)}
               >
                 ›
               </button>
@@ -203,7 +175,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  aria-label={`${day.key}, ${dayTasks.length} tasks`}
+                  aria-label={`${day.key}, ` + `${dayTasks.length} tasks`}
                   aria-pressed={isSelected}
                   onClick={() => setSelectedDate(day.key)}
                 >
@@ -246,6 +218,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
                       backgroundColor: color,
                     }}
                   />
+
                   {priority}
                 </span>
               ),
@@ -257,7 +230,7 @@ function Calendar({ tasks, projects, onAddTask, onOpenTask }: CalendarProps) {
           <div className="calendar-details-header">
             <p className="subtitle">SELECTED DAY</p>
 
-            <h2>{formatDate(selectedDate)}</h2>
+            <h2>{selectedDateTitle}</h2>
 
             <p className="calendar-details-count">
               {selectedTasks.length} tasks

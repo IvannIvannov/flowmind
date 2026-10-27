@@ -1,30 +1,12 @@
 import type { FormEvent } from "react";
+
+import type { Task, Project, ProjectFormState } from "../../types";
+
 import "./Projects.css";
-
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
-  color: string;
-  createdAt: string;
-}
-
-export interface ProjectTask {
-  id: string;
-  projectId?: string;
-  status: "todo" | "in-progress" | "completed";
-}
-
-export interface ProjectFormState {
-  name: string;
-  description: string;
-  color: string;
-  editingId: string | null;
-}
 
 interface ProjectsProps {
   projects: Project[];
-  tasks: ProjectTask[];
+  tasks: Task[];
   colors: string[];
   form: ProjectFormState;
   onFormChange: (changes: Partial<ProjectFormState>) => void;

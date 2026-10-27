@@ -1,45 +1,23 @@
 import type { FormEvent } from "react";
+
+import type {
+  Task,
+  Project,
+  TaskStatus,
+  TaskFormState,
+  TaskFilters,
+  Priority,
+  TaskSort,
+} from "../../types";
+
+import { formatDate, getTodayKey, isOverdue, isToday } from "../../utils/dates";
+
 import "./Tasks.css";
-
-export type Priority = "low" | "medium" | "high";
-export type TaskStatus = "todo" | "in-progress" | "completed";
-export type TaskSort = "newest" | "oldest" | "priority" | "due-date";
-
-export interface Task {
-  id: string;
-  title: string;
-  priority: Priority;
-  status: TaskStatus;
-  createdAt: string;
-  dueDate?: string;
-  projectId?: string;
-}
-
-export interface TaskProject {
-  id: string;
-  name: string;
-  color: string;
-}
-
-export interface TaskFormState {
-  title: string;
-  priority: Priority;
-  dueDate: string;
-  projectId: string;
-  editingId: string | null;
-}
-
-export interface TaskFilters {
-  search: string;
-  status: string;
-  project: string;
-  sort: TaskSort;
-}
 
 interface TasksProps {
   tasks: Task[];
   visibleTasks: Task[];
-  projects: TaskProject[];
+  projects: Project[];
   form: TaskFormState;
   filters: TaskFilters;
   onFormChange: (changes: Partial<TaskFormState>) => void;
@@ -49,28 +27,6 @@ interface TasksProps {
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
-}
-
-function formatDate(value: string): string {
-  const [year, month, day] = value.split("-").map(Number);
-
-  if (!year || !month || !day) return value;
-
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
-}
-
-function localToday(): string {
-  const date = new Date();
-
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
 }
 
 function Tasks({
@@ -87,7 +43,7 @@ function Tasks({
   onDelete,
   onStatusChange,
 }: TasksProps) {
-  const today = localToday();
+  const today = getTodayKey();
 
   const completedCount = tasks.filter(
     (task) => task.status === "completed",
@@ -101,11 +57,11 @@ function Tasks({
     if (!task.dueDate) return "";
 
     if (task.status !== "completed") {
-      if (task.dueDate < today) {
+      if (isOverdue(task.dueDate)) {
         return `Overdue: ${formatDate(task.dueDate)}`;
       }
 
-      if (task.dueDate === today) {
+      if (isToday(task.dueDate)) {
         return "Due today";
       }
     }
@@ -118,7 +74,7 @@ function Tasks({
       return "";
     }
 
-    if (task.dueDate < today) return "overdue";
+    if (isOverdue(task.dueDate)) return "overdue";
     if (task.dueDate === today) return "today";
 
     return "upcoming";

@@ -1,6 +1,5 @@
+import type { Page } from "../../types";
 import "./Sidebar.css";
-
-export type Page = "dashboard" | "tasks" | "projects" | "calendar";
 
 interface SidebarProps {
   currentPage: Page;
@@ -12,10 +11,26 @@ const menuItems: {
   icon: string;
   label: string;
 }[] = [
-  { page: "dashboard", icon: "🏠", label: "Dashboard" },
-  { page: "tasks", icon: "✅", label: "My Tasks" },
-  { page: "projects", icon: "📁", label: "Projects" },
-  { page: "calendar", icon: "📅", label: "Calendar" },
+  {
+    page: "dashboard",
+    icon: "🏠",
+    label: "Dashboard",
+  },
+  {
+    page: "tasks",
+    icon: "✅",
+    label: "My Tasks",
+  },
+  {
+    page: "projects",
+    icon: "📁",
+    label: "Projects",
+  },
+  {
+    page: "calendar",
+    icon: "📅",
+    label: "Calendar",
+  },
 ];
 
 function Sidebar({ currentPage, onNavigate }: SidebarProps) {
@@ -23,6 +38,7 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
     <aside className="fm-sidebar">
       <div className="fm-sidebar-brand">
         <span className="fm-sidebar-symbol">✦</span>
+
         <h2>FlowMind</h2>
       </div>
 
@@ -38,6 +54,7 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             onClick={() => onNavigate(item.page)}
           >
             <span className="fm-sidebar-icon">{item.icon}</span>
+
             <span>{item.label}</span>
           </button>
         ))}
@@ -46,19 +63,24 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
         <button type="button" className="fm-sidebar-item" disabled>
           <span className="fm-sidebar-icon">🧠</span>
+
           <span>AI Assistant</span>
+
           <span className="fm-sidebar-soon">Soon</span>
         </button>
 
         <button type="button" className="fm-sidebar-item" disabled>
           <span className="fm-sidebar-icon">⚙️</span>
+
           <span>Settings</span>
+
           <span className="fm-sidebar-soon">Soon</span>
         </button>
       </nav>
 
       <div className="fm-sidebar-footer">
         <span className="fm-sidebar-status-dot" />
+
         <span>FlowMind v0.6.0</span>
       </div>
     </aside>
