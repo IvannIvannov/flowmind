@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 
 import type { Priority, Project } from "../types";
+import { extractTasksWithOllama } from "../services/ollama";
+import type { SuggestedTask } from "../services/ollama";
 
 import "./AIAssistant.css";
 
@@ -24,75 +26,102 @@ function AIAssistant({
   onOpenTasks,
 }: AIAssistantProps) {
   const [input, setInput] = useState("");
-  const [draft, setDraft] = useState<AssistantTaskDraft | null>(null);
+  const [suggestions, setSuggestions] = useState<SuggestedTask[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [message, setMessage] = useState("");
+  const selectedCount = suggestions.filter(
+    (task) => task.selected && task.title.trim(),
+  ).length;
 
-  function prepareDraft(event: FormEvent<HTMLFormElement>) {
+  async function analyzeNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const text = input.trim();
+    if (!input.trim() || loading) return;
 
-    if (!text) return;
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    setSuggestions([]);
 
-    setDraft({
-      title: text,
-      priority: "medium",
-      dueDate: undefined,
-      projectId: undefined,
-    });
+    try {
+      const result = await extractTasksWithOllama(input, projects);
 
-    setMessage("");
+      setSuggestions(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function updateDraft(changes: Partial<AssistantTaskDraft>) {
-    setDraft((previous) => (previous ? { ...previous, ...changes } : null));
-
-    setMessage("");
+  function updateSuggestion(id: string, changes: Partial<SuggestedTask>) {
+    setSuggestions((previous) =>
+      previous.map((task) => (task.id === id ? { ...task, ...changes } : task)),
+    );
   }
 
-  function saveDraft() {
-    if (!draft || !draft.title.trim()) return;
+  function saveSelectedTasks() {
+    const selected = suggestions.filter(
+      (task) => task.selected && task.title.trim(),
+    );
 
-    onCreateTask({
-      ...draft,
-      title: draft.title.trim(),
-    });
+    if (selected.length === 0) return;
 
-    setDraft(null);
+    for (const task of selected) {
+      onCreateTask({
+        title: task.title.trim(),
+        priority: task.priority,
+        dueDate: task.dueDate || undefined,
+        projectId: task.projectId || undefined,
+      });
+    }
+
+    setSuggestions([]);
     setInput("");
-    setMessage("Task added successfully!");
+    setError("");
+
+    setSuccess(
+      `${selected.length} task${
+        selected.length === 1 ? "" : "s"
+      } added successfully!`,
+    );
   }
 
-  function resetDraft() {
-    setDraft(null);
-    setMessage("");
+  function clearResults() {
+    setSuggestions([]);
+    setError("");
+    setSuccess("");
   }
 
   return (
     <div className="fm-ai">
       <header className="fm-ai-header">
-        <p className="fm-ai-eyebrow">YOUR PERSONAL ASSISTANT</p>
+        <p className="fm-ai-eyebrow">LOCAL AI WORKSPACE</p>
 
         <h1>AI Assistant 🧠</h1>
 
-        <p>Turn your ideas and notes into organized tasks.</p>
+        <p>
+          Turn your notes into multiple organized tasks using your local AI
+          model.
+        </p>
       </header>
 
       <div className="fm-ai-layout">
-        <section className="fm-ai-main">
-          <div className="fm-ai-intro">
+        <div className="fm-ai-main">
+          <section className="fm-ai-intro">
             <div className="fm-ai-intro-icon">✨</div>
 
             <h2>What's on your mind?</h2>
 
             <p>
-              Write down something you need to do. Prepare a task draft, review
-              its details, and save it to FlowMind.
+              Write your tasks naturally in Bulgarian. FlowMind will ask Ollama
+              to identify individual actions and suggest deadlines.
             </p>
-          </div>
+          </section>
 
-          <form className="fm-ai-compose" onSubmit={prepareDraft}>
+          <form className="fm-ai-compose" onSubmit={analyzeNote}>
             <label htmlFor="fm-ai-input">Your note</label>
 
             <textarea
@@ -100,12 +129,13 @@ function AIAssistant({
               value={input}
               onChange={(event) => {
                 setInput(event.target.value);
-                setMessage("");
+                setError("");
               }}
-              placeholder={"Например: Монтирай видеото за клиента до петък."}
-              rows={6}
+              placeholder="Утре да изпратя имейл на Юлия, в петък да монтирам видеото за Mazu и в понеделник да подготвя контент план."
               maxLength={5000}
+              rows={6}
               required
+              disabled={loading}
             />
 
             <div className="fm-ai-compose-footer">
@@ -114,16 +144,43 @@ function AIAssistant({
               <button
                 type="submit"
                 className="fm-ai-primary"
-                disabled={!input.trim()}
+                disabled={loading || !input.trim()}
               >
-                Prepare Draft →
+                {loading ? "Analyzing..." : "✨ Analyze with AI"}
               </button>
             </div>
+
+            {loading && (
+              <p
+                role="status"
+                style={{
+                  marginTop: 15,
+                  color: "#c4b5fd",
+                  fontSize: 13,
+                }}
+              >
+                Gemma 3 is analyzing your note locally...
+              </p>
+            )}
           </form>
 
-          {message && (
+          {error && (
+            <div
+              role="alert"
+              className="fm-ai-success"
+              style={{
+                background: "#3a2530",
+                borderColor: "#69313e",
+                color: "#fda4af",
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {success && (
             <div className="fm-ai-success" role="status">
-              <span>✓ {message}</span>
+              <span>✓ {success}</span>
 
               <button type="button" onClick={onOpenTasks}>
                 View Tasks →
@@ -131,137 +188,198 @@ function AIAssistant({
             </div>
           )}
 
-          {draft && (
+          {suggestions.length > 0 && (
             <section className="fm-ai-draft">
               <div className="fm-ai-draft-header">
                 <div>
                   <p className="fm-ai-eyebrow">REVIEW BEFORE SAVING</p>
 
-                  <h2>Task Draft</h2>
+                  <h2>{suggestions.length} Suggested Tasks</h2>
                 </div>
 
                 <span className="fm-ai-draft-status">Not saved</span>
               </div>
 
-              <div className="fm-ai-fields">
-                <div className="fm-ai-field fm-ai-full">
-                  <label htmlFor="fm-ai-title">Task Name</label>
+              <p
+                style={{
+                  color: "#a6abba",
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  marginBottom: 20,
+                }}
+              >
+                AI can make mistakes. Check every task, especially its deadline,
+                before saving.
+              </p>
 
-                  <input
-                    id="fm-ai-title"
-                    type="text"
-                    value={draft.title}
-                    maxLength={200}
-                    onChange={(event) =>
-                      updateDraft({
-                        title: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="fm-ai-field">
-                  <label htmlFor="fm-ai-priority">Priority</label>
-
-                  <select
-                    id="fm-ai-priority"
-                    value={draft.priority}
-                    onChange={(event) =>
-                      updateDraft({
-                        priority: event.target.value as Priority,
-                      })
-                    }
+              {suggestions.map((task, index) => (
+                <div
+                  key={task.id}
+                  style={{
+                    padding: 18,
+                    marginBottom: 14,
+                    border: "1px solid #383b4d",
+                    borderRadius: 12,
+                    background: "#242633",
+                    opacity: task.selected ? 1 : 0.55,
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 18,
+                      color: "#c4b5fd",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
                   >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
+                    <input
+                      type="checkbox"
+                      checked={task.selected}
+                      onChange={(event) =>
+                        updateSuggestion(task.id, {
+                          selected: event.target.checked,
+                        })
+                      }
+                    />
+                    Task {index + 1} — Include
+                  </label>
+
+                  <div className="fm-ai-fields">
+                    <div className="fm-ai-field fm-ai-full">
+                      <label htmlFor={`fm-ai-title-${task.id}`}>
+                        Task Name
+                      </label>
+
+                      <input
+                        id={`fm-ai-title-${task.id}`}
+                        type="text"
+                        maxLength={200}
+                        value={task.title}
+                        onChange={(event) =>
+                          updateSuggestion(task.id, {
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="fm-ai-field">
+                      <label htmlFor={`fm-ai-priority-${task.id}`}>
+                        Priority
+                      </label>
+
+                      <select
+                        id={`fm-ai-priority-${task.id}`}
+                        value={task.priority}
+                        onChange={(event) =>
+                          updateSuggestion(task.id, {
+                            priority: event.target.value as Priority,
+                          })
+                        }
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+
+                    <div className="fm-ai-field">
+                      <label htmlFor={`fm-ai-date-${task.id}`}>Due Date</label>
+
+                      <input
+                        id={`fm-ai-date-${task.id}`}
+                        type="date"
+                        value={task.dueDate}
+                        onChange={(event) =>
+                          updateSuggestion(task.id, {
+                            dueDate: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="fm-ai-field fm-ai-full">
+                      <label htmlFor={`fm-ai-project-${task.id}`}>
+                        Project
+                      </label>
+
+                      <select
+                        id={`fm-ai-project-${task.id}`}
+                        value={task.projectId}
+                        onChange={(event) =>
+                          updateSuggestion(task.id, {
+                            projectId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">No Project</option>
+
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="fm-ai-field">
-                  <label htmlFor="fm-ai-date">Due Date</label>
-
-                  <input
-                    id="fm-ai-date"
-                    type="date"
-                    value={draft.dueDate || ""}
-                    onChange={(event) =>
-                      updateDraft({
-                        dueDate: event.target.value || undefined,
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="fm-ai-field fm-ai-full">
-                  <label htmlFor="fm-ai-project">Project</label>
-
-                  <select
-                    id="fm-ai-project"
-                    value={draft.projectId || ""}
-                    onChange={(event) =>
-                      updateDraft({
-                        projectId: event.target.value || undefined,
-                      })
-                    }
-                  >
-                    <option value="">No Project</option>
-
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              ))}
 
               <div className="fm-ai-draft-actions">
                 <button
                   type="button"
                   className="fm-ai-primary"
-                  disabled={!draft.title.trim()}
-                  onClick={saveDraft}
+                  disabled={selectedCount === 0}
+                  onClick={saveSelectedTasks}
                 >
-                  ✓ Save Task
+                  ✓ Save Selected Tasks ({selectedCount})
                 </button>
 
                 <button
                   type="button"
                   className="fm-ai-secondary"
-                  onClick={resetDraft}
+                  onClick={clearResults}
                 >
-                  Cancel
+                  Discard
                 </button>
               </div>
             </section>
           )}
-        </section>
+        </div>
 
         <aside className="fm-ai-side">
           <div className="fm-ai-info">
-            <span className="fm-ai-info-icon">🧩</span>
+            <span className="fm-ai-info-icon">🧠</span>
 
-            <h3>How it works</h3>
+            <h3>Powered by Ollama</h3>
 
             <p>
-              Enter your note, prepare a draft, adjust its details and save it.
+              Model: Gemma 3 1B. Your text is sent to the Ollama server running
+              on this computer.
             </p>
 
             <div className="fm-ai-steps">
               <div>
                 <span>01</span>
-                <p>Write your task</p>
+                <p>Write your notes</p>
               </div>
 
               <div>
                 <span>02</span>
-                <p>Review the draft</p>
+                <p>Analyze with local AI</p>
               </div>
 
               <div>
                 <span>03</span>
-                <p>Save to FlowMind</p>
+                <p>Review proposed tasks</p>
+              </div>
+
+              <div>
+                <span>04</span>
+                <p>Save selected tasks</p>
               </div>
             </div>
           </div>
@@ -269,15 +387,13 @@ function AIAssistant({
           <div className="fm-ai-info">
             <span className="fm-ai-info-icon">🔒</span>
 
-            <h3>Local workspace</h3>
+            <h3>Local processing</h3>
 
-            <p>
-              This draft tool works locally. No AI service is connected yet.
-            </p>
+            <p>AI requests use the local Ollama address 127.0.0.1:11434.</p>
 
             <p className="fm-ai-info-note">
-              Next: connect Ollama for automatic task extraction and
-              natural-language understanding.
+              No external paid AI API is required. Review AI-generated details
+              before saving.
             </p>
           </div>
         </aside>
