@@ -3,10 +3,12 @@ import type { FormEvent } from "react";
 
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
+import Projects from "./components/Projects/Projects";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Tasks from "./components/Tasks/Tasks";
 
 import type { Page } from "./components/Sidebar/Sidebar";
+import type { Project, ProjectFormState } from "./components/Projects/Projects";
 import type {
   Priority,
   Task,
@@ -16,14 +18,6 @@ import type {
 } from "./components/Tasks/Tasks";
 
 import "./App.css";
-
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  color: string;
-  createdAt: string;
-}
 
 const TASKS_KEY = "flowmind-tasks";
 const PROJECTS_KEY = "flowmind-projects";
@@ -58,13 +52,19 @@ const INITIAL_FILTERS: TaskFilters = {
   sort: "newest",
 };
 
+const INITIAL_PROJECT_FORM: ProjectFormState = {
+  name: "",
+  description: "",
+  color: COLORS[0],
+  editingId: null,
+};
+
 function readStoredArray<T>(
   key: string,
   validate: (value: unknown) => value is T,
 ): T[] {
   try {
     const text = localStorage.getItem(key);
-
     if (!text) return [];
 
     const parsed: unknown = JSON.parse(text);
@@ -77,9 +77,7 @@ function readStoredArray<T>(
 }
 
 function isTask(value: unknown): value is Task {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
+  if (!value || typeof value !== "object") return false;
 
   const task = value as Partial<Task>;
 
@@ -93,9 +91,7 @@ function isTask(value: unknown): value is Task {
 }
 
 function isProject(value: unknown): value is Project {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
+  if (!value || typeof value !== "object") return false;
 
   const project = value as Partial<Project>;
 
@@ -123,11 +119,8 @@ function App() {
 
   const [taskFilters, setTaskFilters] = useState<TaskFilters>(INITIAL_FILTERS);
 
-  const [editingProject, setEditingProject] = useState<string | null>(null);
-
-  const [projectName, setProjectName] = useState("");
-  const [projectDescription, setProjectDescription] = useState("");
-  const [projectColor, setProjectColor] = useState(COLORS[0]);
+  const [projectForm, setProjectForm] =
+    useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
   useEffect(() => {
     try {
@@ -170,9 +163,7 @@ function App() {
           const difference =
             PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
 
-          if (difference !== 0) {
-            return difference;
-          }
+          if (difference !== 0) return difference;
         }
 
         if (sort === "due-date") {
@@ -188,6 +179,8 @@ function App() {
         return b.createdAt.localeCompare(a.createdAt);
       });
   }, [tasks, projects, taskFilters]);
+
+  // TASK MANAGEMENT
 
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
@@ -211,7 +204,6 @@ function App() {
     event.preventDefault();
 
     const name = taskForm.title.trim();
-
     if (!name) return;
 
     const projectId = projects.some(
@@ -288,24 +280,29 @@ function App() {
     }
   }
 
+  // PROJECT MANAGEMENT
+
+  function updateProjectForm(changes: Partial<ProjectFormState>) {
+    setProjectForm((previous) => ({
+      ...previous,
+      ...changes,
+    }));
+  }
+
   function resetProjectForm() {
-    setProjectName("");
-    setProjectDescription("");
-    setProjectColor(COLORS[0]);
-    setEditingProject(null);
+    setProjectForm({ ...INITIAL_PROJECT_FORM });
   }
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const name = projectName.trim();
-
+    const name = projectForm.name.trim();
     if (!name) return;
 
     const duplicate = projects.some(
       (project) =>
         project.name.trim().toLowerCase() === name.toLowerCase() &&
-        project.id !== editingProject,
+        project.id !== projectForm.editingId,
     );
 
     if (duplicate) {
@@ -313,15 +310,15 @@ function App() {
       return;
     }
 
-    if (editingProject) {
+    if (projectForm.editingId) {
       setProjects((previous) =>
         previous.map((project) =>
-          project.id === editingProject
+          project.id === projectForm.editingId
             ? {
                 ...project,
                 name,
-                description: projectDescription.trim(),
-                color: projectColor,
+                description: projectForm.description.trim(),
+                color: projectForm.color,
               }
             : project,
         ),
@@ -330,8 +327,8 @@ function App() {
       const newProject: Project = {
         id: crypto.randomUUID(),
         name,
-        description: projectDescription.trim(),
-        color: projectColor,
+        description: projectForm.description.trim(),
+        color: projectForm.color,
         createdAt: new Date().toISOString(),
       };
 
@@ -342,10 +339,12 @@ function App() {
   }
 
   function startEditProject(project: Project) {
-    setEditingProject(project.id);
-    setProjectName(project.name);
-    setProjectDescription(project.description);
-    setProjectColor(project.color);
+    setProjectForm({
+      name: project.name,
+      description: project.description,
+      color: project.color,
+      editingId: project.id,
+    });
   }
 
   function deleteProject(project: Project) {
@@ -386,7 +385,7 @@ function App() {
       });
     }
 
-    if (editingProject === project.id) {
+    if (projectForm.editingId === project.id) {
       resetProjectForm();
     }
   }
@@ -401,6 +400,8 @@ function App() {
 
     setPage("tasks");
   }
+
+  // CALENDAR INTEGRATION
 
   function addTaskFromCalendar(date: string) {
     setTaskForm({
@@ -425,6 +426,8 @@ function App() {
       startEditTask(task);
     }
   }
+
+  // APP LAYOUT
 
   return (
     <div className="app">
@@ -458,188 +461,18 @@ function App() {
         )}
 
         {page === "projects" && (
-          <div className="fm-projects">
-            <header className="page-header">
-              <p className="subtitle">ORGANIZE YOUR WORK</p>
-
-              <h1>Projects 📁</h1>
-
-              <p className="description">
-                Group related tasks and track your progress.
-              </p>
-            </header>
-
-            <section className="task-panel">
-              <h2>{editingProject ? "Edit Project" : "Create New Project"}</h2>
-
-              <form className="project-form" onSubmit={submitProject}>
-                <div className="form-field">
-                  <label htmlFor="project-name">Project Name</label>
-
-                  <input
-                    id="project-name"
-                    placeholder="e.g. University"
-                    value={projectName}
-                    maxLength={80}
-                    required
-                    onChange={(event) => setProjectName(event.target.value)}
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="project-description">
-                    Description (Optional)
-                  </label>
-
-                  <textarea
-                    id="project-description"
-                    placeholder="What's this project about?"
-                    value={projectDescription}
-                    maxLength={300}
-                    rows={3}
-                    onChange={(event) =>
-                      setProjectDescription(event.target.value)
-                    }
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label>Project Color</label>
-
-                  <div className="color-picker">
-                    {COLORS.map((color) => (
-                      <button
-                        type="button"
-                        key={color}
-                        aria-label={`Choose color ${color}`}
-                        aria-pressed={projectColor === color}
-                        className={`color-choice ${
-                          projectColor === color ? "selected" : ""
-                        }`}
-                        style={{
-                          backgroundColor: color,
-                        }}
-                        onClick={() => setProjectColor(color)}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="form-actions">
-                  <button className="primary-button" type="submit">
-                    {editingProject ? "Save Project" : "+ Create Project"}
-                  </button>
-
-                  {editingProject && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={resetProjectForm}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-            </section>
-
-            <div className="section-heading projects-title">
-              <h2>Your Projects ({projects.length})</h2>
-            </div>
-
-            {projects.length === 0 ? (
-              <div className="task-panel empty-state">
-                <div>📁</div>
-
-                <h3>No projects yet</h3>
-
-                <p>Create your first project above.</p>
-              </div>
-            ) : (
-              <div className="project-grid">
-                {projects.map((project) => {
-                  const projectTasks = tasks.filter(
-                    (task) => task.projectId === project.id,
-                  );
-
-                  const done = projectTasks.filter(
-                    (task) => task.status === "completed",
-                  ).length;
-
-                  const percent = projectTasks.length
-                    ? Math.round((done / projectTasks.length) * 100)
-                    : 0;
-
-                  return (
-                    <article className="project-card" key={project.id}>
-                      <div className="project-card-top">
-                        <span
-                          className="project-dot"
-                          style={{
-                            backgroundColor: project.color,
-                          }}
-                        />
-
-                        <h3>{project.name}</h3>
-                      </div>
-
-                      <p className="project-description">
-                        {project.description || "No description"}
-                      </p>
-
-                      <div className="project-progress-label">
-                        <span>
-                          {done}/{projectTasks.length} tasks completed
-                        </span>
-
-                        <strong>{percent}%</strong>
-                      </div>
-
-                      <div className="progress-track">
-                        <div
-                          className="progress-fill"
-                          style={{
-                            width: `${percent}%`,
-                            backgroundColor: project.color,
-                          }}
-                        />
-                      </div>
-
-                      <div className="project-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => openProjectTasks(project.id)}
-                        >
-                          View Tasks
-                        </button>
-
-                        <button
-                          type="button"
-                          className="icon-button edit-button"
-                          title="Edit project"
-                          aria-label={`Edit ${project.name}`}
-                          onClick={() => startEditProject(project)}
-                        >
-                          ✏️
-                        </button>
-
-                        <button
-                          type="button"
-                          className="icon-button delete-button"
-                          title="Delete project"
-                          aria-label={`Delete ${project.name}`}
-                          onClick={() => deleteProject(project)}
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <Projects
+            projects={projects}
+            tasks={tasks}
+            colors={COLORS}
+            form={projectForm}
+            onFormChange={updateProjectForm}
+            onSubmit={submitProject}
+            onCancelEdit={resetProjectForm}
+            onEdit={startEditProject}
+            onDelete={deleteProject}
+            onOpenTasks={openProjectTasks}
+          />
         )}
 
         {page === "calendar" && (
