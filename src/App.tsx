@@ -1,50 +1,75 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="app">
+      <aside className="sidebar">
+        <h2 className="logo">✦ FlowMind</h2>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+        <nav className="navigation">
+          <button className="nav-item active">🏠 Dashboard</button>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+          <button className="nav-item">✅ My Tasks</button>
+
+          <button className="nav-item">📁 Projects</button>
+
+          <button className="nav-item">📅 Calendar</button>
+
+          <button className="nav-item">🧠 AI Assistant</button>
+
+          <button className="nav-item">⚙️ Settings</button>
+        </nav>
+
+        <div className="sidebar-footer">
+          <p>FlowMind v0.1.0</p>
+        </div>
+      </aside>
+
+      <main className="content">
+        <header className="page-header">
+          <div>
+            <p className="subtitle">YOUR PERSONAL WORKSPACE</p>
+
+            <h1>Welcome to FlowMind 👋</h1>
+
+            <p className="description">
+              Organize your tasks, projects and ideas in one place.
+            </p>
+          </div>
+        </header>
+
+        <section className="welcome-card">
+          <div className="card-icon">✨</div>
+
+          <h2>Your workspace is ready!</h2>
+
+          <p>
+            This is the beginning of your personal AI-powered productivity
+            assistant.
+          </p>
+        </section>
+
+        <section className="stats-grid">
+          <div className="stat-card">
+            <p>Total Tasks</p>
+            <h2>0</h2>
+            <span>No tasks created yet</span>
+          </div>
+
+          <div className="stat-card">
+            <p>In Progress</p>
+            <h2>0</h2>
+            <span>Nothing in progress</span>
+          </div>
+
+          <div className="stat-card">
+            <p>Completed</p>
+            <h2>0</h2>
+            <span>Let's get productive!</span>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
