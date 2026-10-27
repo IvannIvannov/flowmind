@@ -1,6 +1,5 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { Priority, Project } from "../types";
-import { getTodayKey, parseDateKey } from "../utils/dates";
 
 const OLLAMA_URL = "http://127.0.0.1:11434/api/generate";
 const MODEL_NAME = "gemma3:1b";
@@ -14,121 +13,378 @@ export interface SuggestedTask {
   selected: boolean;
 }
 
-interface OllamaGenerateResponse {
-  response: string;
+export interface ExtractionResult {
+  tasks: SuggestedTask[];
+  warnings: string[];
+  analyzedSections: number;
 }
 
-interface RawTask {
-  title?: unknown;
-  dueDate?: unknown;
-  priority?: unknown;
-  projectName?: unknown;
+interface SectionResult {
+  tasks: SuggestedTask[];
+  warnings: string[];
 }
 
-interface RawExtraction {
-  tasks?: unknown;
-}
+const WEEKDAYS: Record<string, number> = {
+  понеделник: 1,
+  вторник: 2,
+  сряда: 3,
+  четвъртък: 4,
+  петък: 5,
+  събота: 6,
+  неделя: 0,
+};
+
+const MONTHS: Record<string, number> = {
+  януари: 1,
+  февруари: 2,
+  март: 3,
+  април: 4,
+  май: 5,
+  юни: 6,
+  юли: 7,
+  август: 8,
+  септември: 9,
+  октомври: 10,
+  ноември: 11,
+  декември: 12,
+};
+
+const DAY_NAMES = Object.keys(WEEKDAYS).join("|");
+const MONTH_NAMES = Object.keys(MONTHS).join("|");
+
+const DATE_PATTERN = new RegExp(
+  [
+    "до края на седмицата",
+    "до края на месеца",
+    "вдругиден",
+    "утре",
+    "днес",
+    "след\\s+\\d{1,3}\\s+дни?",
+    "(?:на\\s+|до\\s+)?\\d{4}-\\d{2}-\\d{2}",
+    "(?:на\\s+|до\\s+)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?",
+    `(?:на\\s+|до\\s+)?\\d{1,2}\\s+(?:${MONTH_NAMES})(?:\\s+\\d{4})?`,
+    `(?:(?:другата|другия|следващата|следващия)\\s+)?(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})`,
+  ].join("|"),
+  "giu",
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function nextWeekday(dayIndex: number): string {
-  const current = new Date();
-  let difference = (dayIndex - current.getDay() + 7) % 7;
-
-  if (difference === 0) difference = 7;
-
-  current.setDate(current.getDate() + difference);
-
-  return [
-    current.getFullYear(),
-    String(current.getMonth() + 1).padStart(2, "0"),
-    String(current.getDate()).padStart(2, "0"),
-  ].join("-");
+function normalize(text: string): string {
+  return text.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
 }
 
-function tomorrowKey(): string {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
+function dateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
-  return [
-    tomorrow.getFullYear(),
-    String(tomorrow.getMonth() + 1).padStart(2, "0"),
-    String(tomorrow.getDate()).padStart(2, "0"),
-  ].join("-");
+  return `${year}-${month}-${day}`;
 }
 
-function normalizePriority(value: unknown): Priority {
-  if (value === "high" || value === "low") return value;
+function makeDate(year: number, month: number, day: number): Date | null {
+  const result = new Date(year, month - 1, day);
+
+  if (
+    result.getFullYear() !== year ||
+    result.getMonth() !== month - 1 ||
+    result.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return result;
+}
+
+function addDays(date: Date, count: number): Date {
+  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  result.setDate(result.getDate() + count);
+  return result;
+}
+
+function upcomingWeekday(today: Date, target: number): Date {
+  const offset = (target - today.getDay() + 7) % 7;
+
+  return addDays(today, offset);
+}
+
+function weekdayNextWeek(today: Date, target: number): Date {
+  const weekdayFromMonday = (today.getDay() + 6) % 7;
+  const nextMonday = addDays(today, 7 - weekdayFromMonday);
+
+  return addDays(nextMonday, (target + 6) % 7);
+}
+
+function resolveDate(expression: string, today: Date): string {
+  const text = normalize(expression)
+    .replace(/[.!?,;]+$/g, "")
+    .trim();
+
+  if (text === "днес") return dateKey(today);
+
+  if (text === "утре") {
+    return dateKey(addDays(today, 1));
+  }
+
+  if (text === "вдругиден") {
+    return dateKey(addDays(today, 2));
+  }
+
+  if (text === "до края на седмицата") {
+    const offset = (7 - today.getDay()) % 7;
+    return dateKey(addDays(today, offset));
+  }
+
+  if (text === "до края на месеца") {
+    return dateKey(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+  }
+
+  const afterDays = text.match(/^след\s+(\d{1,3})\s+дни?$/);
+
+  if (afterDays) {
+    return dateKey(addDays(today, Number(afterDays[1])));
+  }
+
+  const iso = text.match(/^(?:на\s+|до\s+)?(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (iso) {
+    const result = makeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+    return result ? dateKey(result) : "";
+  }
+
+  const numeric = text.match(
+    /^(?:на\s+|до\s+)?(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\.?$/,
+  );
+
+  if (numeric) {
+    const day = Number(numeric[1]);
+    const month = Number(numeric[2]);
+    let year = numeric[3] ? Number(numeric[3]) : today.getFullYear();
+
+    let result = makeDate(year, month, day);
+
+    if (!result) return "";
+
+    if (!numeric[3] && dateKey(result) < dateKey(today)) {
+      year += 1;
+      result = makeDate(year, month, day);
+    }
+
+    return result ? dateKey(result) : "";
+  }
+
+  const natural = text.match(
+    /^(?:на\s+|до\s+)?(\d{1,2})\s+([а-я]+)(?:\s+(\d{4}))?$/,
+  );
+
+  if (natural && MONTHS[natural[2]]) {
+    const day = Number(natural[1]);
+    const month = MONTHS[natural[2]];
+
+    let year = natural[3] ? Number(natural[3]) : today.getFullYear();
+
+    let result = makeDate(year, month, day);
+
+    if (!result) return "";
+
+    if (!natural[3] && dateKey(result) < dateKey(today)) {
+      year += 1;
+      result = makeDate(year, month, day);
+    }
+
+    return result ? dateKey(result) : "";
+  }
+
+  const weekdayPattern = new RegExp(
+    "^(?:(другата|другия|следващата|следващия)" +
+      "\\s+)?(?:(?:в|във|до)\\s+)?" +
+      `(${DAY_NAMES})$`,
+  );
+
+  const weekday = text.match(weekdayPattern);
+
+  if (weekday) {
+    const target = WEEKDAYS[weekday[2]];
+
+    return dateKey(
+      weekday[1]
+        ? weekdayNextWeek(today, target)
+        : upcomingWeekday(today, target),
+    );
+  }
+
+  return "";
+}
+
+function findDates(section: string): string[] {
+  return Array.from(section.matchAll(DATE_PATTERN), (match) => match[0].trim());
+}
+
+function getDeadline(
+  section: string,
+  today: Date,
+): {
+  date: string;
+  warning: string;
+} {
+  const dates = findDates(section)
+    .map((expression) => resolveDate(expression, today))
+    .filter(Boolean);
+
+  const uniqueDates = [...new Set(dates)];
+
+  if (uniqueDates.length === 0) {
+    return {
+      date: "",
+      warning: "",
+    };
+  }
+
+  if (uniqueDates.length === 1) {
+    return {
+      date: uniqueDates[0],
+      warning: "",
+    };
+  }
+
+  return {
+    date: "",
+    warning:
+      `Multiple dates in "${section}". ` + "Please set the deadline manually.",
+  };
+}
+
+function getPriority(section: string): Priority {
+  const text = normalize(section);
+
+  if (/без\s+бързане|не\s+е\s+спешно/u.test(text)) {
+    return "low";
+  }
+
+  if (/спешно|неотложно|приоритетно/u.test(text)) {
+    return "high";
+  }
+
   return "medium";
 }
 
-function normalizeDueDate(value: unknown): string {
+function findProject(value: unknown, projects: Project[]): string {
   if (typeof value !== "string") return "";
 
-  const trimmed = value.trim();
+  const requested = normalize(value);
 
-  if (!trimmed) return "";
-  if (!parseDateKey(trimmed)) return "";
-
-  return trimmed;
-}
-
-function findProjectId(name: unknown, projects: Project[]): string {
-  if (typeof name !== "string" || !name.trim()) {
-    return "";
-  }
-
-  const normalized = name.trim().toLocaleLowerCase("bg-BG");
-
-  const exact = projects.find(
-    (project) => project.name.trim().toLocaleLowerCase("bg-BG") === normalized,
+  const match = projects.find(
+    (project) => normalize(project.name) === requested,
   );
 
-  return exact?.id ?? "";
+  return match?.id ?? "";
 }
 
-function buildPrompt(input: string, projects: Project[]): string {
-  const projectNames = projects.map((project) => project.name);
+function guessProjectFromSection(section: string, projects: Project[]): string {
+  const text = normalize(section);
 
-  return `
-You extract tasks from Bulgarian notes for a task manager.
+  const matches = projects.filter(
+    (project) =>
+      project.name.trim().length > 0 && text.includes(normalize(project.name)),
+  );
 
-TODAY: ${getTodayKey()}
-TOMORROW: ${tomorrowKey()}
+  return matches.length === 1 ? matches[0].id : "";
+}
 
-NEXT UPCOMING WEEKDAYS:
-Monday: ${nextWeekday(1)}
-Tuesday: ${nextWeekday(2)}
-Wednesday: ${nextWeekday(3)}
-Thursday: ${nextWeekday(4)}
-Friday: ${nextWeekday(5)}
-Saturday: ${nextWeekday(6)}
-Sunday: ${nextWeekday(0)}
+function splitNote(note: string): string[] {
+  return note
+    .replace(/\r\n/g, "\n")
+    .split(/\n+|[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
+    .map((section) => section.trim())
+    .filter(Boolean);
+}
 
-AVAILABLE PROJECTS:
-${JSON.stringify(projectNames)}
+function isClearlyPastInformation(section: string): boolean {
+  const text = normalize(section);
 
-STRICT RULES:
-- Return exactly one task per explicitly requested action.
-- Keep all tasks. Do not invent subtasks.
-- Write short, natural Bulgarian task titles.
-- Assign each date only to the action it describes.
-- "утре" means TOMORROW.
-- "в петък" means the next upcoming Friday.
-- "в понеделник" means the next upcoming Monday.
-- An explicit YYYY-MM-DD date takes priority.
-- If a deadline is unclear or absent, use an empty string.
-- Priority must be low, medium, or high.
-- Use medium unless importance is clearly indicated.
-- projectName must match an available project exactly,
-  or be an empty string if uncertain.
-- Return only valid JSON. No explanations.
+  const pastStart =
+    /^(?:(?:днес|вчера)\s+)?(?:проведохме|обсъдихме|приключихме|завършихме|получихме)(?:\s|$)/u;
 
-USER NOTE:
-${input}
-`.trim();
+  const pendingAction =
+    /трябва|предстои|необходимо|да\s+(?:изпратя|направя|подготвя|монтирам|проверя|организирам)/u;
+
+  return pastStart.test(text) && !pendingAction.test(text);
+}
+
+function looksLikePendingAction(section: string): boolean {
+  const text = normalize(section);
+
+  return (
+    /трябва\s+да|необходимо\s+е\s+да|предстои\s+да/u.test(text) ||
+    /(?:^|\s)да\s+(?:изпратя|пратя|подготвя|монтирам|проверя|организирам|направя|създам|публикувам|снимам|обработя|редактирам|качa|кача)(?:\s|$)/u.test(
+      text,
+    ) ||
+    /^(?:изпрати|подготви|монтирай|провери|организирай|направи|създай|публикувай|снимай)(?:\s|$)/u.test(
+      text,
+    )
+  );
+}
+
+function fallbackTitle(section: string): string {
+  let title = section.trim();
+
+  // Remove clearly recognized dates without
+  // deleting the actual action.
+  for (const expression of findDates(title)) {
+    title = title.replace(expression, " ");
+  }
+
+  title = title
+    .replace(/^\s*за\s+/iu, "За ")
+    .replace(/\bтрябва\s+да\s+/iu, "")
+    .replace(/\bнеобходимо\s+е\s+да\s+/iu, "")
+    .replace(/\bпредстои\s+да\s+/iu, "")
+    .replace(/^\s*да\s+/iu, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[,;:\s]+|[,;:\s.]+$/g, "")
+    .trim();
+
+  if (!title) {
+    return section.trim().slice(0, 200);
+  }
+
+  return (title.charAt(0).toLocaleUpperCase("bg-BG") + title.slice(1)).slice(
+    0,
+    200,
+  );
+}
+
+function makeSuggestedTask(
+  title: string,
+  section: string,
+  projects: Project[],
+  today: Date,
+  proposedProject: unknown,
+): {
+  task: SuggestedTask;
+  warning: string;
+} {
+  const deadline = getDeadline(section, today);
+
+  const projectId =
+    findProject(proposedProject, projects) ||
+    guessProjectFromSection(section, projects);
+
+  return {
+    task: {
+      id: crypto.randomUUID(),
+      title: title.trim().slice(0, 200),
+      priority: getPriority(section),
+      dueDate: deadline.date,
+      projectId,
+      selected: true,
+    },
+    warning: deadline.warning,
+  };
 }
 
 const RESPONSE_SCHEMA = {
@@ -140,117 +396,211 @@ const RESPONSE_SCHEMA = {
         type: "object",
         properties: {
           title: { type: "string" },
-          dueDate: { type: "string" },
-          priority: {
-            type: "string",
-            enum: ["low", "medium", "high"],
-          },
           projectName: { type: "string" },
         },
-        required: ["title", "dueDate", "priority", "projectName"],
+        required: ["title", "projectName"],
       },
     },
   },
   required: ["tasks"],
 };
 
-export async function extractTasksWithOllama(
-  input: string,
-  projects: Project[],
-): Promise<SuggestedTask[]> {
-  const prompt = input.trim();
+function buildPrompt(section: string, projects: Project[]): string {
+  return `
+You extract pending tasks from Bulgarian text.
 
-  if (!prompt) {
-    throw new Error("Please enter a note first.");
+AVAILABLE PROJECTS:
+${JSON.stringify(projects.map((p) => p.name))}
+
+Return ONLY JSON in this format:
+{"tasks":[{"title":"...","projectName":""}]}
+
+Rules:
+- Extract actions still needing to be done.
+- Do not create a task for an event that already happened.
+- Keep all explicit pending actions.
+- Use short Bulgarian titles.
+- Do not invent subtasks.
+- Use an available project name only if certain.
+- Otherwise projectName must be "".
+- If there are no pending actions, return {"tasks":[]}.
+
+Examples:
+
+INPUT: До петък трябва да изпратя имейл на Юлия.
+OUTPUT: {"tasks":[{"title":"Изпрати имейл на Юлия","projectName":""}]}
+
+INPUT: Трябва да проверя получените материали.
+OUTPUT: {"tasks":[{"title":"Провери получените материали","projectName":""}]}
+
+INPUT: Днес проведохме среща.
+OUTPUT: {"tasks":[]}
+
+INPUT:
+${section}
+
+OUTPUT:
+`.trim();
+}
+
+async function analyzeSection(
+  section: string,
+  projects: Project[],
+  today: Date,
+): Promise<SectionResult> {
+  if (isClearlyPastInformation(section)) {
+    return {
+      tasks: [],
+      warnings: [],
+    };
   }
 
-  let response: Response;
+  const warnings: string[] = [];
+  const tasks: SuggestedTask[] = [];
+
+  let modelTasks: unknown[] = [];
+  let aiFailed = false;
 
   try {
-    response = await tauriFetch(OLLAMA_URL, {
+    const response = await tauriFetch(OLLAMA_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: MODEL_NAME,
-        prompt: buildPrompt(prompt, projects),
+        prompt: buildPrompt(section, projects),
         format: RESPONSE_SCHEMA,
         stream: false,
         keep_alive: "20m",
         options: {
           temperature: 0,
-          num_predict: 750,
+          num_predict: 350,
         },
       }),
       signal: AbortSignal.timeout(120000),
     });
+
+    if (!response.ok) {
+      throw new Error(`Ollama HTTP ${response.status}`);
+    }
+
+    const data: unknown = await response.json();
+
+    if (!isRecord(data) || typeof data.response !== "string") {
+      throw new Error("Invalid Ollama response");
+    }
+
+    const parsed: unknown = JSON.parse(data.response);
+
+    if (!isRecord(parsed) || !Array.isArray(parsed.tasks)) {
+      throw new Error("Invalid AI task list");
+    }
+
+    modelTasks = parsed.tasks;
   } catch (error) {
-    console.error("Ollama connection error:", error);
+    console.error("AI section analysis failed:", error);
 
-    throw new Error(
-      "Cannot connect to Ollama. Make sure Ollama is running and gemma3:1b is installed.",
-    );
+    aiFailed = true;
   }
 
-  if (!response.ok) {
-    throw new Error(
-      `Ollama returned HTTP ${response.status}. Check that gemma3:1b is available.`,
-    );
-  }
-
-  let data: unknown;
-
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error("Ollama returned an invalid HTTP response.");
-  }
-
-  if (!isRecord(data) || typeof data.response !== "string") {
-    throw new Error("Unexpected response format from Ollama.");
-  }
-
-  const generated = data as unknown as OllamaGenerateResponse;
-
-  let parsed: RawExtraction;
-
-  try {
-    parsed = JSON.parse(generated.response) as RawExtraction;
-  } catch {
-    throw new Error("The AI response was not valid JSON. Please try again.");
-  }
-
-  if (!parsed || !Array.isArray(parsed.tasks)) {
-    throw new Error("The AI did not return a task list.");
-  }
-
-  const suggestions: SuggestedTask[] = [];
-
-  for (const item of parsed.tasks) {
-    if (!isRecord(item)) continue;
-
-    const raw = item as RawTask;
-
-    if (typeof raw.title !== "string" || !raw.title.trim()) {
+  for (const item of modelTasks) {
+    if (
+      !isRecord(item) ||
+      typeof item.title !== "string" ||
+      !item.title.trim()
+    ) {
       continue;
     }
 
-    suggestions.push({
-      id: crypto.randomUUID(),
-      title: raw.title.trim().slice(0, 200),
-      priority: normalizePriority(raw.priority),
-      dueDate: normalizeDueDate(raw.dueDate),
-      projectId: findProjectId(raw.projectName, projects),
-      selected: true,
-    });
-  }
-
-  if (suggestions.length === 0) {
-    throw new Error(
-      "No tasks were recognized. Try describing your actions more clearly.",
+    // For sections that clearly describe
+    // future actions, dates come from the
+    // original text, never from the AI.
+    const suggestion = makeSuggestedTask(
+      item.title,
+      section,
+      projects,
+      today,
+      item.projectName,
     );
+
+    tasks.push(suggestion.task);
+
+    if (suggestion.warning) {
+      warnings.push(suggestion.warning);
+    }
   }
 
-  return suggestions;
+  // Fallback: a clear pending action must
+  // not disappear just because the small
+  // AI model returned an empty list.
+  if (tasks.length === 0 && looksLikePendingAction(section)) {
+    const suggestion = makeSuggestedTask(
+      fallbackTitle(section),
+      section,
+      projects,
+      today,
+      "",
+    );
+
+    tasks.push(suggestion.task);
+
+    warnings.push(
+      `AI did not confirm this action. ` +
+        `A draft was created from the original text: "${section}". ` +
+        "Please review its title and deadline.",
+    );
+
+    if (suggestion.warning) {
+      warnings.push(suggestion.warning);
+    }
+  } else if (tasks.length === 0 && aiFailed) {
+    warnings.push(`Could not analyze this section: "${section}".`);
+  }
+
+  return {
+    tasks,
+    warnings,
+  };
+}
+
+export async function extractTasksWithOllama(
+  input: string,
+  projects: Project[],
+): Promise<ExtractionResult> {
+  const note = input.trim();
+
+  if (!note) {
+    throw new Error("Please enter a note first.");
+  }
+
+  const sections = splitNote(note);
+
+  if (sections.length === 0) {
+    throw new Error("No note sections found.");
+  }
+
+  if (sections.length > 25) {
+    throw new Error("Please analyze up to 25 sections at a time.");
+  }
+
+  const now = new Date();
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const results: SectionResult[] = [];
+
+  // Sequential processing is predictable
+  // for one locally running AI model.
+  for (const section of sections) {
+    const result = await analyzeSection(section, projects, today);
+
+    results.push(result);
+  }
+
+  return {
+    tasks: results.flatMap((result) => result.tasks),
+    warnings: results.flatMap((result) => result.warnings),
+    analyzedSections: sections.length,
+  };
 }

@@ -2,8 +2,10 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 
 import type { Priority, Project } from "../types";
+
 import { extractTasksWithOllama } from "../services/ollama";
-import type { SuggestedTask } from "../services/ollama";
+
+import type { SuggestedTask, ExtractionResult } from "../services/ollama";
 
 import "./AIAssistant.css";
 
@@ -27,6 +29,12 @@ function AIAssistant({
 }: AIAssistantProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<SuggestedTask[]>([]);
+
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [reviewedWarnings, setReviewedWarnings] = useState(false);
+
+  const [analyzedSections, setAnalyzedSections] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -34,6 +42,9 @@ function AIAssistant({
   const selectedCount = suggestions.filter(
     (task) => task.selected && task.title.trim(),
   ).length;
+
+  const canSave =
+    selectedCount > 0 && (warnings.length === 0 || reviewedWarnings);
 
   async function analyzeNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,11 +55,19 @@ function AIAssistant({
     setError("");
     setSuccess("");
     setSuggestions([]);
+    setWarnings([]);
+    setReviewedWarnings(false);
+    setAnalyzedSections(0);
 
     try {
-      const result = await extractTasksWithOllama(input, projects);
+      const result: ExtractionResult = await extractTasksWithOllama(
+        input,
+        projects,
+      );
 
-      setSuggestions(result);
+      setSuggestions(result.tasks);
+      setWarnings(result.warnings);
+      setAnalyzedSections(result.analyzedSections);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -62,12 +81,25 @@ function AIAssistant({
     );
   }
 
+  function selectAll(value: boolean) {
+    setSuggestions((previous) =>
+      previous.map((task) => ({
+        ...task,
+        selected: value,
+      })),
+    );
+  }
+
+  function removeSuggestion(id: string) {
+    setSuggestions((previous) => previous.filter((task) => task.id !== id));
+  }
+
   function saveSelectedTasks() {
+    if (!canSave) return;
+
     const selected = suggestions.filter(
       (task) => task.selected && task.title.trim(),
     );
-
-    if (selected.length === 0) return;
 
     for (const task of selected) {
       onCreateTask({
@@ -79,6 +111,9 @@ function AIAssistant({
     }
 
     setSuggestions([]);
+    setWarnings([]);
+    setReviewedWarnings(false);
+    setAnalyzedSections(0);
     setInput("");
     setError("");
 
@@ -91,6 +126,9 @@ function AIAssistant({
 
   function clearResults() {
     setSuggestions([]);
+    setWarnings([]);
+    setReviewedWarnings(false);
+    setAnalyzedSections(0);
     setError("");
     setSuccess("");
   }
@@ -103,8 +141,8 @@ function AIAssistant({
         <h1>AI Assistant 🧠</h1>
 
         <p>
-          Turn your notes into multiple organized tasks using your local AI
-          model.
+          Turn your notes and meeting summaries into organized tasks using local
+          AI.
         </p>
       </header>
 
@@ -116,8 +154,8 @@ function AIAssistant({
             <h2>What's on your mind?</h2>
 
             <p>
-              Write your tasks naturally in Bulgarian. FlowMind will ask Ollama
-              to identify individual actions and suggest deadlines.
+              Paste meeting notes or describe your tasks in Bulgarian. FlowMind
+              will analyze each section separately.
             </p>
           </section>
 
@@ -131,9 +169,9 @@ function AIAssistant({
                 setInput(event.target.value);
                 setError("");
               }}
-              placeholder="Утре да изпратя имейл на Юлия, в петък да монтирам видеото за Mazu и в понеделник да подготвя контент план."
+              placeholder="Днес проведохме среща. До петък трябва да изпратя предложенията. Следващия понеделник да подготвя списък с брандове."
               maxLength={5000}
-              rows={6}
+              rows={7}
               required
               disabled={loading}
             />
@@ -146,7 +184,7 @@ function AIAssistant({
                 className="fm-ai-primary"
                 disabled={loading || !input.trim()}
               >
-                {loading ? "Analyzing..." : "✨ Analyze with AI"}
+                {loading ? "Analyzing sections..." : "✨ Analyze with AI"}
               </button>
             </div>
 
@@ -154,12 +192,12 @@ function AIAssistant({
               <p
                 role="status"
                 style={{
-                  marginTop: 15,
-                  color: "#c4b5fd",
+                  marginTop: 16,
                   fontSize: 13,
+                  color: "#c4b5fd",
                 }}
               >
-                Gemma 3 is analyzing your note locally...
+                Ollama is processing your note section by section...
               </p>
             )}
           </form>
@@ -188,7 +226,7 @@ function AIAssistant({
             </div>
           )}
 
-          {suggestions.length > 0 && (
+          {analyzedSections > 0 && (
             <section className="fm-ai-draft">
               <div className="fm-ai-draft-header">
                 <div>
@@ -208,9 +246,121 @@ function AIAssistant({
                   marginBottom: 20,
                 }}
               >
-                AI can make mistakes. Check every task, especially its deadline,
-                before saving.
+                {analyzedSections} note section
+                {analyzedSections === 1 ? "" : "s"} analyzed. Check every
+                suggestion before saving.
               </p>
+
+              {warnings.length > 0 && (
+                <div
+                  role="alert"
+                  style={{
+                    border: "1px solid #8a6231",
+                    background: "#332b21",
+                    borderRadius: 12,
+                    padding: 18,
+                    marginBottom: 22,
+                    color: "#f9d89a",
+                  }}
+                >
+                  <h3
+                    style={{
+                      margin: "0 0 10px",
+                      fontSize: 16,
+                    }}
+                  >
+                    ⚠ {warnings.length} Review Warning
+                    {warnings.length === 1 ? "" : "s"}
+                  </h3>
+
+                  <p
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Some sections may contain missing or uncertain information.
+                    Review the original note before saving.
+                  </p>
+
+                  <ul
+                    style={{
+                      paddingLeft: 22,
+                      marginTop: 14,
+                      marginBottom: 16,
+                      fontSize: 13,
+                      lineHeight: 1.8,
+                    }}
+                  >
+                    {warnings.map((warning, index) => (
+                      <li key={index}>{warning}</li>
+                    ))}
+                  </ul>
+
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={reviewedWarnings}
+                      onChange={(event) =>
+                        setReviewedWarnings(event.target.checked)
+                      }
+                    />
+                    I reviewed the warnings and checked the original note.
+                  </label>
+                </div>
+              )}
+
+              {suggestions.length === 0 && (
+                <div
+                  style={{
+                    padding: 20,
+                    border: "1px solid #383b4d",
+                    borderRadius: 12,
+                    background: "#242633",
+                    color: "#c3c6d2",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  No tasks were extracted. Review the note or try shorter,
+                  clearer instructions.
+                </div>
+              )}
+
+              {suggestions.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    marginBottom: 18,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="fm-ai-secondary"
+                    onClick={() => selectAll(true)}
+                  >
+                    Select All
+                  </button>
+
+                  <button
+                    type="button"
+                    className="fm-ai-secondary"
+                    onClick={() => selectAll(false)}
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              )}
 
               {suggestions.map((task, index) => (
                 <div
@@ -224,28 +374,46 @@ function AIAssistant({
                     opacity: task.selected ? 1 : 0.55,
                   }}
                 >
-                  <label
+                  <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
+                      justifyContent: "space-between",
+                      gap: 12,
                       marginBottom: 18,
-                      color: "#c4b5fd",
-                      fontSize: 13,
-                      fontWeight: 600,
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={task.selected}
-                      onChange={(event) =>
-                        updateSuggestion(task.id, {
-                          selected: event.target.checked,
-                        })
-                      }
-                    />
-                    Task {index + 1} — Include
-                  </label>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        color: "#c4b5fd",
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.selected}
+                        onChange={(event) =>
+                          updateSuggestion(task.id, {
+                            selected: event.target.checked,
+                          })
+                        }
+                      />
+                      Task {index + 1} — Include
+                    </label>
+
+                    <button
+                      type="button"
+                      className="fm-ai-secondary"
+                      onClick={() => removeSuggestion(task.id)}
+                      aria-label={`Remove task ${index + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
 
                   <div className="fm-ai-fields">
                     <div className="fm-ai-field fm-ai-full">
@@ -281,7 +449,9 @@ function AIAssistant({
                         }
                       >
                         <option value="low">Low</option>
+
                         <option value="medium">Medium</option>
+
                         <option value="high">High</option>
                       </select>
                     </div>
@@ -332,7 +502,7 @@ function AIAssistant({
                 <button
                   type="button"
                   className="fm-ai-primary"
-                  disabled={selectedCount === 0}
+                  disabled={!canSave}
                   onClick={saveSelectedTasks}
                 >
                   ✓ Save Selected Tasks ({selectedCount})
@@ -357,24 +527,24 @@ function AIAssistant({
             <h3>Powered by Ollama</h3>
 
             <p>
-              Model: Gemma 3 1B. Your text is sent to the Ollama server running
-              on this computer.
+              Model: Gemma 3 1B. FlowMind processes sections of your note
+              separately.
             </p>
 
             <div className="fm-ai-steps">
               <div>
                 <span>01</span>
-                <p>Write your notes</p>
+                <p>Paste meeting notes</p>
               </div>
 
               <div>
                 <span>02</span>
-                <p>Analyze with local AI</p>
+                <p>Extract pending actions</p>
               </div>
 
               <div>
                 <span>03</span>
-                <p>Review proposed tasks</p>
+                <p>Review tasks and warnings</p>
               </div>
 
               <div>
@@ -389,11 +559,13 @@ function AIAssistant({
 
             <h3>Local processing</h3>
 
-            <p>AI requests use the local Ollama address 127.0.0.1:11434.</p>
+            <p>
+              Requests are sent to your local Ollama server at 127.0.0.1:11434.
+            </p>
 
             <p className="fm-ai-info-note">
-              No external paid AI API is required. Review AI-generated details
-              before saving.
+              No paid AI API is required. Always check AI-generated tasks before
+              saving.
             </p>
           </div>
         </aside>
