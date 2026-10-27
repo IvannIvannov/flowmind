@@ -1,0 +1,384 @@
+/* FLOWMIND - TASKS COMPONENT */
+
+.fm-tasks {
+    width: 100%;
+    min-width: 0;
+}
+
+/* HEADER */
+
+.fm-tasks-header {
+    margin-bottom: 35px;
+}
+
+.fm-tasks-subtitle {
+    color: #a78bfa;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 12px;
+}
+
+.fm-tasks-header h1 {
+    color: #ffffff;
+    font-size: 34px;
+    margin: 0 0 12px;
+}
+
+.fm-tasks-description {
+    color: #989eae;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+/* PANELS */
+
+.fm-tasks-panel {
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 18px;
+    padding: 28px;
+    margin-bottom: 25px;
+}
+
+.fm-tasks-panel>h2 {
+    color: #ffffff;
+    font-size: 20px;
+    margin: 0 0 22px;
+}
+
+/* FORM */
+
+.fm-tasks-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 14px;
+}
+
+.fm-tasks-field {
+    display: flex;
+    flex: 1 1 160px;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+}
+
+.fm-tasks-title-field {
+    flex: 2 1 240px;
+}
+
+.fm-tasks-field label {
+    color: #a3a8b8;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.fm-tasks-field input,
+.fm-tasks-field select,
+.fm-tasks-toolbar input,
+.fm-tasks-toolbar select,
+.fm-tasks-actions select {
+    width: 100%;
+    min-width: 0;
+    padding: 13px;
+    color: #f8fafc;
+    background: #12141d;
+    border: 1px solid #383b4d;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.fm-tasks-field input::placeholder,
+.fm-tasks-toolbar input::placeholder {
+    color: #777e91;
+}
+
+.fm-tasks-field input[type="date"] {
+    color-scheme: dark;
+}
+
+.fm-tasks-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.fm-tasks-primary-button,
+.fm-tasks-secondary-button {
+    border: none;
+    border-radius: 10px;
+    padding: 13px 20px;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fm-tasks-primary-button {
+    background: #8b5cf6;
+}
+
+.fm-tasks-primary-button:hover {
+    background: #7c3aed;
+}
+
+.fm-tasks-secondary-button {
+    background: #343747;
+}
+
+.fm-tasks-secondary-button:hover {
+    background: #45495b;
+}
+
+/* LIST HEADING */
+
+.fm-tasks-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 22px;
+}
+
+.fm-tasks-section-heading h2 {
+    color: #ffffff;
+    font-size: 20px;
+    margin: 0;
+}
+
+.fm-tasks-muted {
+    color: #8d93a5;
+    font-size: 13px;
+}
+
+/* FILTERS */
+
+.fm-tasks-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.fm-tasks-toolbar input {
+    flex: 2 1 220px;
+}
+
+.fm-tasks-toolbar select {
+    flex: 1 1 155px;
+}
+
+/* TASK LIST */
+
+.fm-tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fm-tasks-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    padding: 18px;
+    background: #242633;
+    border: 1px solid #343747;
+    border-radius: 12px;
+}
+
+.fm-tasks-info {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.fm-tasks-info h3 {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.5;
+    margin: 0 0 12px;
+}
+
+.fm-tasks-info h3.fm-tasks-completed {
+    color: #818699;
+    text-decoration: line-through;
+}
+
+.fm-tasks-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+}
+
+/* PRIORITY */
+
+.fm-tasks-priority,
+.fm-tasks-deadline,
+.fm-tasks-project-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 7px;
+}
+
+.fm-tasks-priority {
+    text-transform: capitalize;
+}
+
+.fm-tasks-priority-low {
+    background: #183b30;
+    color: #6ee7b7;
+}
+
+.fm-tasks-priority-medium {
+    background: #49391d;
+    color: #fcd34d;
+}
+
+.fm-tasks-priority-high {
+    background: #4b252e;
+    color: #fda4af;
+}
+
+/* DEADLINES */
+
+.fm-tasks-deadline {
+    background: #303344;
+    color: #b6bfd5;
+}
+
+.fm-tasks-deadline.upcoming {
+    background: #24364a;
+    color: #93c5fd;
+}
+
+.fm-tasks-deadline.today {
+    background: #49391d;
+    color: #fcd34d;
+}
+
+.fm-tasks-deadline.overdue {
+    background: #4b252e;
+    color: #fda4af;
+}
+
+/* PROJECT TAG */
+
+.fm-tasks-project-tag {
+    background: #303044;
+    color: #e2d9ff;
+}
+
+.fm-tasks-project-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ACTIONS */
+
+.fm-tasks-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.fm-tasks-actions select {
+    width: 145px;
+}
+
+.fm-tasks-icon-button {
+    width: 43px;
+    height: 43px;
+    border: none;
+    border-radius: 9px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.fm-tasks-edit-button {
+    background: #37304e;
+}
+
+.fm-tasks-edit-button:hover {
+    background: #51416d;
+}
+
+.fm-tasks-delete-button {
+    background: #3a2530;
+}
+
+.fm-tasks-delete-button:hover {
+    background: #69313e;
+}
+
+/* EMPTY STATE */
+
+.fm-tasks-empty {
+    text-align: center;
+    padding: 45px 20px;
+    color: #a3a8b8;
+}
+
+.fm-tasks-empty>div {
+    font-size: 36px;
+}
+
+.fm-tasks-empty h3 {
+    color: #ffffff;
+    margin-bottom: 8px;
+}
+
+.fm-tasks-empty p {
+    font-size: 13px;
+}
+
+/* FOCUS */
+
+.fm-tasks button:focus-visible,
+.fm-tasks input:focus-visible,
+.fm-tasks select:focus-visible {
+    outline: 2px solid #a78bfa;
+    outline-offset: 2px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1200px) {
+    .fm-tasks-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .fm-tasks-actions {
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 650px) {
+    .fm-tasks-header h1 {
+        font-size: 27px;
+    }
+
+    .fm-tasks-panel {
+        padding: 18px;
+    }
+
+    .fm-tasks-actions {
+        flex-wrap: wrap;
+    }
+}

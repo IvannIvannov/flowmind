@@ -1,24 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
 import Sidebar from "./components/Sidebar/Sidebar";
+import Tasks from "./components/Tasks/Tasks";
+
 import type { Page } from "./components/Sidebar/Sidebar";
+import type {
+  Priority,
+  Task,
+  TaskStatus,
+  TaskFormState,
+  TaskFilters,
+} from "./components/Tasks/Tasks";
+
 import "./App.css";
-
-type Priority = "low" | "medium" | "high";
-type Status = "todo" | "in-progress" | "completed";
-type Sort = "newest" | "oldest" | "priority" | "due-date";
-
-interface Task {
-  id: string;
-  title: string;
-  priority: Priority;
-  status: Status;
-  createdAt: string;
-  dueDate?: string;
-  projectId?: string;
-}
 
 interface Project {
   id: string;
@@ -46,16 +43,33 @@ const PRIORITY_VALUE: Record<Priority, number> = {
   high: 3,
 };
 
+const INITIAL_TASK_FORM: TaskFormState = {
+  title: "",
+  priority: "medium",
+  dueDate: "",
+  projectId: "",
+  editingId: null,
+};
+
+const INITIAL_FILTERS: TaskFilters = {
+  search: "",
+  status: "all",
+  project: "all",
+  sort: "newest",
+};
+
 function readStoredArray<T>(
   key: string,
   validate: (value: unknown) => value is T,
 ): T[] {
   try {
     const text = localStorage.getItem(key);
+
     if (!text) return [];
 
-    const data: unknown = JSON.parse(text);
-    return Array.isArray(data) ? data.filter(validate) : [];
+    const parsed: unknown = JSON.parse(text);
+
+    return Array.isArray(parsed) ? parsed.filter(validate) : [];
   } catch (error) {
     console.error(`Unable to read ${key}`, error);
     return [];
@@ -63,7 +77,10 @@ function readStoredArray<T>(
 }
 
 function isTask(value: unknown): value is Task {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
   const task = value as Partial<Task>;
 
   return (
@@ -76,7 +93,10 @@ function isTask(value: unknown): value is Task {
 }
 
 function isProject(value: unknown): value is Project {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
   const project = value as Partial<Project>;
 
   return (
@@ -86,27 +106,6 @@ function isProject(value: unknown): value is Project {
     typeof project.color === "string" &&
     typeof project.createdAt === "string"
   );
-}
-
-function todayString(): string {
-  const date = new Date();
-
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-function formattedDate(value: string): string {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return value;
-
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
 }
 
 function App() {
@@ -120,23 +119,15 @@ function App() {
     readStoredArray(PROJECTS_KEY, isProject),
   );
 
-  const [title, setTitle] = useState("");
-  const [priority, setPriority] = useState<Priority>("medium");
-  const [dueDate, setDueDate] = useState("");
-  const [selectedProject, setSelectedProject] = useState("");
-  const [editingTask, setEditingTask] = useState<string | null>(null);
+  const [taskForm, setTaskForm] = useState<TaskFormState>(INITIAL_TASK_FORM);
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [sort, setSort] = useState<Sort>("newest");
+  const [taskFilters, setTaskFilters] = useState<TaskFilters>(INITIAL_FILTERS);
 
   const [editingProject, setEditingProject] = useState<string | null>(null);
+
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [projectColor, setProjectColor] = useState(COLORS[0]);
-
-  const today = todayString();
 
   useEffect(() => {
     try {
@@ -155,28 +146,33 @@ function App() {
   }, [projects]);
 
   const visibleTasks = useMemo(() => {
+    const { search, status, project, sort } = taskFilters;
+
     return tasks
       .filter((task) => {
         const matchesSearch = task.title
           .toLowerCase()
           .includes(search.toLowerCase().trim());
 
-        const matchesStatus =
-          statusFilter === "all" || task.status === statusFilter;
+        const matchesStatus = status === "all" || task.status === status;
 
         const matchesProject =
-          projectFilter === "all" ||
-          (projectFilter === "none"
+          project === "all" ||
+          (project === "none"
             ? !task.projectId ||
-              !projects.some((project) => project.id === task.projectId)
-            : task.projectId === projectFilter);
+              !projects.some((item) => item.id === task.projectId)
+            : task.projectId === project);
 
         return matchesSearch && matchesStatus && matchesProject;
       })
       .sort((a, b) => {
         if (sort === "priority") {
-          const diff = PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
-          if (diff) return diff;
+          const difference =
+            PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
+
+          if (difference !== 0) {
+            return difference;
+          }
         }
 
         if (sort === "due-date") {
@@ -191,81 +187,105 @@ function App() {
 
         return b.createdAt.localeCompare(a.createdAt);
       });
-  }, [tasks, projects, search, statusFilter, projectFilter, sort]);
+  }, [tasks, projects, taskFilters]);
+
+  function updateTaskForm(changes: Partial<TaskFormState>) {
+    setTaskForm((previous) => ({
+      ...previous,
+      ...changes,
+    }));
+  }
+
+  function updateTaskFilters(changes: Partial<TaskFilters>) {
+    setTaskFilters((previous) => ({
+      ...previous,
+      ...changes,
+    }));
+  }
 
   function resetTaskForm() {
-    setTitle("");
-    setPriority("medium");
-    setDueDate("");
-    setSelectedProject("");
-    setEditingTask(null);
+    setTaskForm({ ...INITIAL_TASK_FORM });
   }
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const name = title.trim();
+    const name = taskForm.title.trim();
+
     if (!name) return;
 
-    const projectId = projects.some((project) => project.id === selectedProject)
-      ? selectedProject
+    const projectId = projects.some(
+      (project) => project.id === taskForm.projectId,
+    )
+      ? taskForm.projectId
       : undefined;
 
-    if (editingTask) {
+    if (taskForm.editingId) {
       setTasks((previous) =>
         previous.map((task) =>
-          task.id === editingTask
+          task.id === taskForm.editingId
             ? {
                 ...task,
                 title: name,
-                priority,
-                dueDate: dueDate || undefined,
+                priority: taskForm.priority,
+                dueDate: taskForm.dueDate || undefined,
                 projectId,
               }
             : task,
         ),
       );
     } else {
-      const task: Task = {
+      const newTask: Task = {
         id: crypto.randomUUID(),
         title: name,
-        priority,
+        priority: taskForm.priority,
         status: "todo",
-        dueDate: dueDate || undefined,
+        dueDate: taskForm.dueDate || undefined,
         projectId,
         createdAt: new Date().toISOString(),
       };
 
-      setTasks((previous) => [task, ...previous]);
+      setTasks((previous) => [newTask, ...previous]);
     }
 
     resetTaskForm();
   }
 
   function startEditTask(task: Task) {
-    setEditingTask(task.id);
-    setTitle(task.title);
-    setPriority(task.priority);
-    setDueDate(task.dueDate || "");
-    setSelectedProject(task.projectId || "");
-    setSearch("");
-    setStatusFilter("all");
-    setProjectFilter("all");
+    setTaskForm({
+      title: task.title,
+      priority: task.priority,
+      dueDate: task.dueDate || "",
+      projectId: task.projectId || "",
+      editingId: task.id,
+    });
+
+    setTaskFilters((previous) => ({
+      ...previous,
+      search: "",
+      status: "all",
+      project: "all",
+    }));
+
     setPage("tasks");
   }
 
-  function changeStatus(id: string, status: Status) {
+  function changeTaskStatus(id: string, status: TaskStatus) {
     setTasks((previous) =>
       previous.map((task) => (task.id === id ? { ...task, status } : task)),
     );
   }
 
   function deleteTask(task: Task) {
-    if (!window.confirm(`Delete task "${task.title}"?`)) return;
+    const confirmed = window.confirm(`Delete task "${task.title}"?`);
+
+    if (!confirmed) return;
 
     setTasks((previous) => previous.filter((item) => item.id !== task.id));
 
-    if (editingTask === task.id) resetTaskForm();
+    if (taskForm.editingId === task.id) {
+      resetTaskForm();
+    }
   }
 
   function resetProjectForm() {
@@ -279,6 +299,7 @@ function App() {
     event.preventDefault();
 
     const name = projectName.trim();
+
     if (!name) return;
 
     const duplicate = projects.some(
@@ -306,7 +327,7 @@ function App() {
         ),
       );
     } else {
-      const project: Project = {
+      const newProject: Project = {
         id: crypto.randomUUID(),
         name,
         description: projectDescription.trim(),
@@ -314,7 +335,7 @@ function App() {
         createdAt: new Date().toISOString(),
       };
 
-      setProjects((previous) => [...previous, project]);
+      setProjects((previous) => [...previous, newProject]);
     }
 
     resetProjectForm();
@@ -330,14 +351,13 @@ function App() {
   function deleteProject(project: Project) {
     const count = tasks.filter((task) => task.projectId === project.id).length;
 
-    if (
-      !window.confirm(
-        `Delete "${project.name}"?\n\n` +
-          `${count} task(s) will become unassigned. ` +
-          "The tasks themselves will NOT be deleted.",
-      )
-    )
-      return;
+    const confirmed = window.confirm(
+      `Delete "${project.name}"?\n\n` +
+        `${count} task(s) will become unassigned. ` +
+        "The tasks themselves will NOT be deleted.",
+    );
+
+    if (!confirmed) return;
 
     setProjects((previous) =>
       previous.filter((item) => item.id !== project.id),
@@ -346,60 +366,64 @@ function App() {
     setTasks((previous) =>
       previous.map((task) =>
         task.projectId === project.id
-          ? { ...task, projectId: undefined }
+          ? {
+              ...task,
+              projectId: undefined,
+            }
           : task,
       ),
     );
 
-    if (projectFilter === project.id) setProjectFilter("all");
-    if (selectedProject === project.id) setSelectedProject("");
-    if (editingProject === project.id) resetProjectForm();
-  }
-
-  function projectForTask(task: Task) {
-    return projects.find((project) => project.id === task.projectId);
-  }
-
-  function deadlineLabel(task: Task): string {
-    if (!task.dueDate) return "";
-
-    if (task.status !== "completed") {
-      if (task.dueDate < today) {
-        return `Overdue: ${formattedDate(task.dueDate)}`;
-      }
-
-      if (task.dueDate === today) return "Due today";
+    if (taskFilters.project === project.id) {
+      updateTaskFilters({
+        project: "all",
+      });
     }
 
-    return `Due: ${formattedDate(task.dueDate)}`;
-  }
+    if (taskForm.projectId === project.id) {
+      updateTaskForm({
+        projectId: "",
+      });
+    }
 
-  function deadlineClass(task: Task): string {
-    if (!task.dueDate || task.status === "completed") return "";
-    if (task.dueDate < today) return "overdue";
-    if (task.dueDate === today) return "today";
-    return "upcoming";
+    if (editingProject === project.id) {
+      resetProjectForm();
+    }
   }
 
   function openProjectTasks(id: string) {
-    setProjectFilter(id);
-    setStatusFilter("all");
-    setSearch("");
+    setTaskFilters((previous) => ({
+      ...previous,
+      project: id,
+      status: "all",
+      search: "",
+    }));
+
     setPage("tasks");
   }
 
   function addTaskFromCalendar(date: string) {
-    resetTaskForm();
-    setDueDate(date);
-    setSearch("");
-    setStatusFilter("all");
-    setProjectFilter("all");
+    setTaskForm({
+      ...INITIAL_TASK_FORM,
+      dueDate: date,
+    });
+
+    setTaskFilters((previous) => ({
+      ...previous,
+      search: "",
+      status: "all",
+      project: "all",
+    }));
+
     setPage("tasks");
   }
 
-  function openTaskFromCalendar(taskId: string) {
-    const task = tasks.find((item) => item.id === taskId);
-    if (task) startEditTask(task);
+  function openTaskFromCalendar(id: string) {
+    const task = tasks.find((item) => item.id === id);
+
+    if (task) {
+      startEditTask(task);
+    }
   }
 
   return (
@@ -417,255 +441,29 @@ function App() {
         )}
 
         {page === "tasks" && (
-          <>
-            <header className="page-header">
-              <p className="subtitle">STAY ORGANIZED</p>
-              <h1>My Tasks ✅</h1>
-              <p className="description">
-                Manage tasks, projects, priorities and deadlines.
-              </p>
-            </header>
-
-            <section className="task-panel">
-              <h2>{editingTask ? "Edit Task" : "Create New Task"}</h2>
-
-              <form className="task-form" onSubmit={submitTask}>
-                <div className="form-field title-field">
-                  <label htmlFor="task-title">Task Name</label>
-
-                  <input
-                    id="task-title"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    placeholder="What do you need to do?"
-                    maxLength={200}
-                    required
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="task-priority">Priority</label>
-
-                  <select
-                    id="task-priority"
-                    value={priority}
-                    onChange={(event) =>
-                      setPriority(event.target.value as Priority)
-                    }
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="task-date">Due Date</label>
-
-                  <input
-                    id="task-date"
-                    type="date"
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="task-project">Project</label>
-
-                  <select
-                    id="task-project"
-                    value={selectedProject}
-                    onChange={(event) => setSelectedProject(event.target.value)}
-                  >
-                    <option value="">No Project</option>
-
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-actions">
-                  <button type="submit" className="primary-button">
-                    {editingTask ? "Save Changes" : "+ Add Task"}
-                  </button>
-
-                  {editingTask && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={resetTaskForm}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-            </section>
-
-            <section className="task-panel">
-              <div className="section-heading">
-                <h2>Your Tasks ({visibleTasks.length})</h2>
-
-                <span className="muted">
-                  {tasks.filter((t) => t.status === "completed").length} of{" "}
-                  {tasks.length} completed
-                </span>
-              </div>
-
-              <div className="task-toolbar">
-                <input
-                  type="search"
-                  aria-label="Search tasks"
-                  placeholder="Search tasks..."
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-
-                <select
-                  aria-label="Filter by status"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="todo">To Do</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                </select>
-
-                <select
-                  aria-label="Filter by project"
-                  value={projectFilter}
-                  onChange={(event) => setProjectFilter(event.target.value)}
-                >
-                  <option value="all">All Projects</option>
-                  <option value="none">No Project</option>
-
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  aria-label="Sort tasks"
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value as Sort)}
-                >
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                  <option value="priority">Highest Priority</option>
-                  <option value="due-date">Nearest Deadline</option>
-                </select>
-              </div>
-
-              {visibleTasks.length === 0 ? (
-                <div className="empty-state">
-                  <div>📋</div>
-                  <h3>No matching tasks</h3>
-                  <p>Create a task or change your filters.</p>
-                </div>
-              ) : (
-                <div className="task-list">
-                  {visibleTasks.map((task) => {
-                    const project = projectForTask(task);
-
-                    return (
-                      <div className="task-item" key={task.id}>
-                        <div className="task-info">
-                          <h3
-                            className={
-                              task.status === "completed"
-                                ? "completed-task"
-                                : ""
-                            }
-                          >
-                            {task.title}
-                          </h3>
-
-                          <div className="task-meta">
-                            <span
-                              className={`priority priority-${task.priority}`}
-                            >
-                              {task.priority} priority
-                            </span>
-
-                            {task.dueDate && (
-                              <span
-                                className={`deadline ${deadlineClass(task)}`}
-                              >
-                                📅 {deadlineLabel(task)}
-                              </span>
-                            )}
-
-                            {project && (
-                              <span className="project-tag">
-                                <span
-                                  className="project-dot"
-                                  style={{
-                                    backgroundColor: project.color,
-                                  }}
-                                />
-                                {project.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="task-actions">
-                          <select
-                            aria-label={`Status for ${task.title}`}
-                            value={task.status}
-                            onChange={(event) =>
-                              changeStatus(
-                                task.id,
-                                event.target.value as Status,
-                              )
-                            }
-                          >
-                            <option value="todo">To Do</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="completed">Completed</option>
-                          </select>
-
-                          <button
-                            type="button"
-                            className="icon-button edit-button"
-                            title="Edit task"
-                            aria-label={`Edit ${task.title}`}
-                            onClick={() => startEditTask(task)}
-                          >
-                            ✏️
-                          </button>
-
-                          <button
-                            type="button"
-                            className="icon-button delete-button"
-                            title="Delete task"
-                            aria-label={`Delete ${task.title}`}
-                            onClick={() => deleteTask(task)}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </>
+          <Tasks
+            tasks={tasks}
+            visibleTasks={visibleTasks}
+            projects={projects}
+            form={taskForm}
+            filters={taskFilters}
+            onFormChange={updateTaskForm}
+            onFiltersChange={updateTaskFilters}
+            onSubmit={submitTask}
+            onCancelEdit={resetTaskForm}
+            onEdit={startEditTask}
+            onDelete={deleteTask}
+            onStatusChange={changeTaskStatus}
+          />
         )}
 
         {page === "projects" && (
-          <>
+          <div className="fm-projects">
             <header className="page-header">
               <p className="subtitle">ORGANIZE YOUR WORK</p>
+
               <h1>Projects 📁</h1>
+
               <p className="description">
                 Group related tasks and track your progress.
               </p>
@@ -718,7 +516,9 @@ function App() {
                         className={`color-choice ${
                           projectColor === color ? "selected" : ""
                         }`}
-                        style={{ backgroundColor: color }}
+                        style={{
+                          backgroundColor: color,
+                        }}
                         onClick={() => setProjectColor(color)}
                       />
                     ))}
@@ -750,7 +550,9 @@ function App() {
             {projects.length === 0 ? (
               <div className="task-panel empty-state">
                 <div>📁</div>
+
                 <h3>No projects yet</h3>
+
                 <p>Create your first project above.</p>
               </div>
             ) : (
@@ -777,6 +579,7 @@ function App() {
                             backgroundColor: project.color,
                           }}
                         />
+
                         <h3>{project.name}</h3>
                       </div>
 
@@ -788,6 +591,7 @@ function App() {
                         <span>
                           {done}/{projectTasks.length} tasks completed
                         </span>
+
                         <strong>{percent}%</strong>
                       </div>
 
@@ -835,7 +639,7 @@ function App() {
                 })}
               </div>
             )}
-          </>
+          </div>
         )}
 
         {page === "calendar" && (
