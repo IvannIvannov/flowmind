@@ -17,10 +17,14 @@ import type {
   TaskFilters,
 } from "./components/Tasks/Tasks";
 
-import "./App.css";
+import {
+  loadTasks,
+  loadProjects,
+  saveTasks,
+  saveProjects,
+} from "./utils/storage";
 
-const TASKS_KEY = "flowmind-tasks";
-const PROJECTS_KEY = "flowmind-projects";
+import "./App.css";
 
 const COLORS = [
   "#8b5cf6",
@@ -59,61 +63,11 @@ const INITIAL_PROJECT_FORM: ProjectFormState = {
   editingId: null,
 };
 
-function readStoredArray<T>(
-  key: string,
-  validate: (value: unknown) => value is T,
-): T[] {
-  try {
-    const text = localStorage.getItem(key);
-    if (!text) return [];
-
-    const parsed: unknown = JSON.parse(text);
-
-    return Array.isArray(parsed) ? parsed.filter(validate) : [];
-  } catch (error) {
-    console.error(`Unable to read ${key}`, error);
-    return [];
-  }
-}
-
-function isTask(value: unknown): value is Task {
-  if (!value || typeof value !== "object") return false;
-
-  const task = value as Partial<Task>;
-
-  return (
-    typeof task.id === "string" &&
-    typeof task.title === "string" &&
-    typeof task.createdAt === "string" &&
-    ["low", "medium", "high"].includes(task.priority ?? "") &&
-    ["todo", "in-progress", "completed"].includes(task.status ?? "")
-  );
-}
-
-function isProject(value: unknown): value is Project {
-  if (!value || typeof value !== "object") return false;
-
-  const project = value as Partial<Project>;
-
-  return (
-    typeof project.id === "string" &&
-    typeof project.name === "string" &&
-    typeof project.description === "string" &&
-    typeof project.color === "string" &&
-    typeof project.createdAt === "string"
-  );
-}
-
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
 
-  const [tasks, setTasks] = useState<Task[]>(() =>
-    readStoredArray(TASKS_KEY, isTask),
-  );
-
-  const [projects, setProjects] = useState<Project[]>(() =>
-    readStoredArray(PROJECTS_KEY, isProject),
-  );
+  const [tasks, setTasks] = useState<Task[]>(loadTasks);
+  const [projects, setProjects] = useState<Project[]>(loadProjects);
 
   const [taskForm, setTaskForm] = useState<TaskFormState>(INITIAL_TASK_FORM);
 
@@ -122,21 +76,17 @@ function App() {
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
+  // PERSISTENCE
+
   useEffect(() => {
-    try {
-      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-    } catch (error) {
-      console.error("Could not save tasks", error);
-    }
+    saveTasks(tasks);
   }, [tasks]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-    } catch (error) {
-      console.error("Could not save projects", error);
-    }
+    saveProjects(projects);
   }, [projects]);
+
+  // TASK FILTERING AND SORTING
 
   const visibleTasks = useMemo(() => {
     const { search, status, project, sort } = taskFilters;
@@ -163,7 +113,9 @@ function App() {
           const difference =
             PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
 
-          if (difference !== 0) return difference;
+          if (difference !== 0) {
+            return difference;
+          }
         }
 
         if (sort === "due-date") {
