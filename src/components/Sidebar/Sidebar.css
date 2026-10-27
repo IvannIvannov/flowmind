@@ -1,0 +1,152 @@
+/* FLOWMIND - SIDEBAR COMPONENT */
+
+.fm-sidebar {
+    width: 250px;
+    min-width: 250px;
+    min-height: 100vh;
+    background: #171923;
+    border-right: 1px solid #2b2e3b;
+    padding: 30px 18px;
+    display: flex;
+    flex-direction: column;
+}
+
+.fm-sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 5px 10px 45px;
+}
+
+.fm-sidebar-brand h2 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 25px;
+    font-weight: 700;
+}
+
+.fm-sidebar-symbol {
+    color: #ffffff;
+    font-size: 28px;
+    line-height: 1;
+}
+
+.fm-sidebar-navigation {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fm-sidebar-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: #aeb5c6;
+    text-align: left;
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        color 0.2s ease;
+}
+
+.fm-sidebar-item:hover:not(:disabled) {
+    background: #252938;
+    color: #ffffff;
+}
+
+.fm-sidebar-item.active {
+    background: #38314f;
+    color: #c4b5fd;
+    font-weight: 600;
+}
+
+.fm-sidebar-item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.fm-sidebar-icon {
+    width: 20px;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.fm-sidebar-divider {
+    height: 1px;
+    margin: 14px 10px;
+    background: #2b2e3b;
+}
+
+.fm-sidebar-soon {
+    margin-left: auto;
+    font-size: 10px;
+    color: #8d93a5;
+}
+
+.fm-sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: auto;
+    padding: 15px 10px 0;
+    color: #71788c;
+    font-size: 12px;
+}
+
+.fm-sidebar-status-dot {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #34d399;
+}
+
+.fm-sidebar-item:focus-visible {
+    outline: 2px solid #c4b5fd;
+    outline-offset: 2px;
+}
+
+@media (max-width: 850px) {
+    .fm-sidebar {
+        width: 200px;
+        min-width: 200px;
+    }
+}
+
+@media (max-width: 650px) {
+    .fm-sidebar {
+        width: 165px;
+        min-width: 165px;
+        padding: 22px 10px;
+    }
+
+    .fm-sidebar-brand {
+        margin-left: 8px;
+        gap: 7px;
+    }
+
+    .fm-sidebar-brand h2 {
+        font-size: 20px;
+    }
+
+    .fm-sidebar-symbol {
+        font-size: 22px;
+    }
+
+    .fm-sidebar-item {
+        gap: 7px;
+        padding: 12px 9px;
+        font-size: 12px;
+    }
+
+    .fm-sidebar-soon {
+        display: none;
+    }
+}
