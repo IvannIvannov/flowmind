@@ -4,6 +4,8 @@ export interface FocusHistoryEntry {
   taskTitle: string;
   durationMinutes: number;
   completedAt: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 export interface FocusHistoryStats {
@@ -12,6 +14,16 @@ export interface FocusHistoryStats {
   totalMinutes: number;
   totalSessions: number;
 }
+
+export interface ProjectFocusStats {
+  key: string;
+  projectId?: string;
+  name: string;
+  minutes: number;
+  sessions: number;
+}
+
+export type FocusPeriod = "this-week" | "last-week" | "all";
 
 export const FOCUS_HISTORY_KEY = "flowmind-focus-history-v1";
 
@@ -36,7 +48,9 @@ function isFocusHistoryEntry(value: unknown): value is FocusHistoryEntry {
     Number.isFinite(value.durationMinutes) &&
     value.durationMinutes > 0 &&
     typeof value.completedAt === "string" &&
-    !Number.isNaN(Date.parse(value.completedAt))
+    !Number.isNaN(Date.parse(value.completedAt)) &&
+    (value.projectId === undefined || typeof value.projectId === "string") &&
+    (value.projectName === undefined || typeof value.projectName === "string")
   );
 }
 
@@ -44,27 +58,20 @@ export function loadFocusHistory(): FocusHistoryEntry[] {
   try {
     const stored = localStorage.getItem(FOCUS_HISTORY_KEY);
 
-    if (!stored) {
-      return [];
-    }
+    if (!stored) return [];
 
     const parsed: unknown = JSON.parse(stored);
 
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
+    if (!Array.isArray(parsed)) return [];
 
     const seen = new Set<string>();
 
     return parsed
       .filter(isFocusHistoryEntry)
       .filter((entry) => {
-        if (seen.has(entry.id)) {
-          return false;
-        }
+        if (seen.has(entry.id)) return false;
 
         seen.add(entry.id);
-
         return true;
       })
       .sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt))
@@ -77,15 +84,11 @@ export function loadFocusHistory(): FocusHistoryEntry[] {
 }
 
 export function addFocusHistoryEntry(entry: FocusHistoryEntry): boolean {
-  if (!isFocusHistoryEntry(entry)) {
-    return false;
-  }
+  if (!isFocusHistoryEntry(entry)) return false;
 
   try {
     const existing = loadFocusHistory();
 
-    // Every timer session has its own unique ID.
-    // Never record the same session twice.
     if (existing.some((item) => item.id === entry.id)) {
       return true;
     }
@@ -106,36 +109,60 @@ export function addFocusHistoryEntry(entry: FocusHistoryEntry): boolean {
   }
 }
 
-function localDateKey(date: Date): string {
+export function localFocusDateKey(date: Date): string {
   const year = date.getFullYear();
-
   const month = String(date.getMonth() + 1).padStart(2, "0");
-
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-function startOfWeek(date: Date): Date {
+export function focusWeekStart(date: Date): Date {
   const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  const daysSinceMonday = (result.getDay() + 6) % 7;
-
-  result.setDate(result.getDate() - daysSinceMonday);
+  result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
 
   return result;
+}
+
+export function filterFocusEntries(
+  entries: FocusHistoryEntry[],
+  period: FocusPeriod,
+  now: Date = new Date(),
+): FocusHistoryEntry[] {
+  const monday = focusWeekStart(now);
+
+  const start =
+    period === "last-week"
+      ? new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 7)
+      : monday;
+
+  const end = new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate() + 7,
+  );
+
+  return entries.filter((entry) => {
+    const timestamp = Date.parse(entry.completedAt);
+
+    if (!Number.isFinite(timestamp) || timestamp > now.getTime()) {
+      return false;
+    }
+
+    if (period === "all") return true;
+
+    return timestamp >= start.getTime() && timestamp < end.getTime();
+  });
 }
 
 export function getFocusHistoryStats(
   entries: FocusHistoryEntry[],
   now: Date = new Date(),
 ): FocusHistoryStats {
-  const todayKey = localDateKey(now);
-
-  const weekStart = startOfWeek(now);
-  const nextWeekStart = new Date(weekStart);
-
-  nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+  const todayKey = localFocusDateKey(now);
+  const weekEntries = filterFocusEntries(entries, "this-week", now);
+  const weekIds = new Set(weekEntries.map((entry) => entry.id));
 
   let todayMinutes = 0;
   let weekMinutes = 0;
@@ -145,24 +172,19 @@ export function getFocusHistoryStats(
   for (const entry of entries) {
     const completed = new Date(entry.completedAt);
 
-    if (
-      Number.isNaN(completed.getTime()) ||
-      completed.getTime() > now.getTime()
-    ) {
+    if (Number.isNaN(completed.getTime()) || completed > now) {
       continue;
     }
 
-    const minutes = entry.durationMinutes;
+    totalSessions++;
+    totalMinutes += entry.durationMinutes;
 
-    totalSessions += 1;
-    totalMinutes += minutes;
-
-    if (localDateKey(completed) === todayKey) {
-      todayMinutes += minutes;
+    if (weekIds.has(entry.id)) {
+      weekMinutes += entry.durationMinutes;
     }
 
-    if (completed >= weekStart && completed < nextWeekStart) {
-      weekMinutes += minutes;
+    if (localFocusDateKey(completed) === todayKey) {
+      todayMinutes += entry.durationMinutes;
     }
   }
 
@@ -174,19 +196,52 @@ export function getFocusHistoryStats(
   };
 }
 
+export function getProjectFocusStats(
+  entries: FocusHistoryEntry[],
+): ProjectFocusStats[] {
+  const groups = new Map<string, ProjectFocusStats>();
+
+  for (const entry of entries) {
+    const key = entry.projectId
+      ? `project:${entry.projectId}`
+      : entry.projectName
+        ? `legacy:${entry.projectName}`
+        : "unassigned";
+
+    const name =
+      entry.projectName?.trim() ||
+      (entry.projectId
+        ? "Deleted or unknown project"
+        : "No Project / Earlier Sessions");
+
+    const previous = groups.get(key);
+
+    if (previous) {
+      previous.minutes += entry.durationMinutes;
+      previous.sessions += 1;
+    } else {
+      groups.set(key, {
+        key,
+        projectId: entry.projectId,
+        name,
+        minutes: entry.durationMinutes,
+        sessions: 1,
+      });
+    }
+  }
+
+  return [...groups.values()].sort(
+    (a, b) => b.minutes - a.minutes || a.name.localeCompare(b.name),
+  );
+}
+
 export function formatFocusMinutes(minutes: number): string {
   const rounded = Math.round(Math.max(0, minutes));
-
   const hours = Math.floor(rounded / 60);
   const remaining = rounded % 60;
 
-  if (hours === 0) {
-    return `${remaining}m`;
-  }
-
-  if (remaining === 0) {
-    return `${hours}h`;
-  }
+  if (hours === 0) return `${remaining}m`;
+  if (remaining === 0) return `${hours}h`;
 
   return `${hours}h ${remaining}m`;
 }
