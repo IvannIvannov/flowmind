@@ -1,25 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Task } from "../../types";
+
 import { loadProjects } from "../../utils/storage";
+
 import { addFocusHistoryEntry } from "../../utils/focusHistory";
 
-import FocusHistory from "./FocusHistory";
 import "./FocusTimer.css";
 
 interface FocusTimerProps {
   tasks: Task[];
 }
 
-type SessionDuration = 15 | 25 | 45;
+type Duration = 15 | 25 | 45;
 
-interface SavedFocusSession {
+interface FocusSession {
   taskId: string;
   taskTitle: string;
   projectId?: string;
   projectName?: string;
   sessionId: string;
-  duration: SessionDuration;
+  duration: Duration;
   remainingSeconds: number;
   running: boolean;
   endTime: number | null;
@@ -27,15 +28,16 @@ interface SavedFocusSession {
 }
 
 const STORAGE_KEY = "flowmind-focus-session-v1";
-const DEFAULT_DURATION: SessionDuration = 25;
 
-function defaultSession(): SavedFocusSession {
+const DURATIONS: Duration[] = [15, 25, 45];
+
+function initialSession(): FocusSession {
   return {
     taskId: "",
     taskTitle: "",
     sessionId: "",
-    duration: DEFAULT_DURATION,
-    remainingSeconds: DEFAULT_DURATION * 60,
+    duration: 25,
+    remainingSeconds: 25 * 60,
     running: false,
     endTime: null,
     finished: false,
@@ -46,11 +48,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validDuration(value: unknown): value is SessionDuration {
+function isDuration(value: unknown): value is Duration {
   return value === 15 || value === 25 || value === 45;
 }
 
-function remainingTime(session: SavedFocusSession, now = Date.now()): number {
+function remainingTime(session: FocusSession, now: number): number {
   if (session.running && session.endTime !== null) {
     return Math.max(0, Math.ceil((session.endTime - now) / 1000));
   }
@@ -58,17 +60,23 @@ function remainingTime(session: SavedFocusSession, now = Date.now()): number {
   return session.remainingSeconds;
 }
 
-function loadSession(): SavedFocusSession {
+function loadSession(): FocusSession {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultSession();
+
+    if (!raw) {
+      return initialSession();
+    }
 
     const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) return defaultSession();
+
+    if (!isRecord(parsed)) {
+      return initialSession();
+    }
 
     if (
       typeof parsed.taskId !== "string" ||
-      !validDuration(parsed.duration) ||
+      !isDuration(parsed.duration) ||
       typeof parsed.remainingSeconds !== "number" ||
       !Number.isFinite(parsed.remainingSeconds) ||
       typeof parsed.running !== "boolean" ||
@@ -78,7 +86,7 @@ function loadSession(): SavedFocusSession {
         (typeof parsed.endTime === "number" && Number.isFinite(parsed.endTime))
       )
     ) {
-      return defaultSession();
+      return initialSession();
     }
 
     const running = parsed.running && typeof parsed.endTime === "number";
@@ -108,27 +116,28 @@ function loadSession(): SavedFocusSession {
       finished: parsed.finished,
     };
   } catch (error) {
-    console.error("Could not load focus session", error);
-    return defaultSession();
+    console.error("FlowMind: cannot load focus session", error);
+
+    return initialSession();
   }
 }
 
-function saveSession(session: SavedFocusSession) {
+function saveSession(session: FocusSession): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch (error) {
-    console.error("Could not save focus session", error);
+    console.error("FlowMind: cannot save focus session", error);
   }
 }
 
-function displayTime(seconds: number) {
-  const safe = Math.max(0, Math.ceil(seconds));
+function timeDisplay(seconds: number): string {
+  const value = Math.max(0, Math.ceil(seconds));
 
-  return (
-    String(Math.floor(safe / 60)).padStart(2, "0") +
-    ":" +
-    String(safe % 60).padStart(2, "0")
-  );
+  const minutes = String(Math.floor(value / 60)).padStart(2, "0");
+
+  const remainder = String(value % 60).padStart(2, "0");
+
+  return `${minutes}:${remainder}`;
 }
 
 function projectSnapshot(task: Task) {
@@ -141,16 +150,28 @@ function projectSnapshot(task: Task) {
 }
 
 function FocusTimer({ tasks }: FocusTimerProps) {
-  const [session, setSession] = useState<SavedFocusSession>(loadSession);
+  const [session, setSession] = useState<FocusSession>(loadSession);
 
   const [now, setNow] = useState(Date.now);
 
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+
+  const [taskSearch, setTaskSearch] = useState("");
+
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const searchRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    if (!session.running) return;
+    if (!session.running) {
+      return;
+    }
 
     const interval = window.setInterval(() => setNow(Date.now()), 250);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [session.running]);
 
   useEffect(() => {
@@ -183,9 +204,11 @@ function FocusTimer({ tasks }: FocusTimerProps) {
       ...snapshot,
     });
 
-    if (!saved) return;
+    if (!saved) {
+      return;
+    }
 
-    const completed: SavedFocusSession = {
+    const finished: FocusSession = {
       ...session,
       remainingSeconds: 0,
       running: false,
@@ -193,15 +216,54 @@ function FocusTimer({ tasks }: FocusTimerProps) {
       finished: true,
     };
 
-    setSession(completed);
-    saveSession(completed);
+    saveSession(finished);
+    setSession(finished);
   }, [session, now, tasks]);
+
+  useEffect(() => {
+    if (!taskMenuOpen) {
+      return;
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setTaskMenuOpen(false);
+        setTaskSearch("");
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setTaskMenuOpen(false);
+        setTaskSearch("");
+      }
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [taskMenuOpen]);
+
+  useEffect(() => {
+    if (taskMenuOpen && tasks.length > 4) {
+      searchRef.current?.focus();
+    }
+  }, [taskMenuOpen, tasks.length]);
 
   const selectedTask =
     tasks.find((task) => task.id === session.taskId) ??
     (session.taskId === "" ? (tasks[0] ?? null) : null);
 
+  const taskMissing = Boolean(session.taskId) && !selectedTask;
+
   const totalSeconds = session.duration * 60;
+
   const remaining = remainingTime(session, now);
 
   const progress = Math.min(
@@ -209,14 +271,31 @@ function FocusTimer({ tasks }: FocusTimerProps) {
     Math.max(0, ((totalSeconds - remaining) / totalSeconds) * 100),
   );
 
-  function commit(next: SavedFocusSession) {
+  const isPaused =
+    !session.running && !session.finished && remaining < totalSeconds;
+
+  const status = session.finished
+    ? "Completed"
+    : session.running
+      ? "Focusing"
+      : isPaused
+        ? "Paused"
+        : "Ready";
+
+  const visibleTasks = tasks.filter((task) =>
+    task.title.toLocaleLowerCase().includes(taskSearch.toLocaleLowerCase()),
+  );
+
+  function commit(next: FocusSession) {
+    saveSession(next);
     setSession(next);
     setNow(Date.now());
-    saveSession(next);
   }
 
   function start() {
-    if (!selectedTask || session.running) return;
+    if (!selectedTask || session.running) {
+      return;
+    }
 
     const seconds =
       session.finished || remaining <= 0 ? totalSeconds : remaining;
@@ -225,7 +304,8 @@ function FocusTimer({ tasks }: FocusTimerProps) {
       !session.finished &&
       remaining > 0 &&
       remaining < totalSeconds &&
-      Boolean(session.sessionId);
+      Boolean(session.sessionId) &&
+      session.taskId === selectedTask.id;
 
     const snapshot = resume
       ? {
@@ -233,6 +313,8 @@ function FocusTimer({ tasks }: FocusTimerProps) {
           projectName: session.projectName,
         }
       : projectSnapshot(selectedTask);
+
+    const startedAt = Date.now();
 
     commit({
       ...session,
@@ -242,17 +324,19 @@ function FocusTimer({ tasks }: FocusTimerProps) {
       sessionId: resume ? session.sessionId : crypto.randomUUID(),
       remainingSeconds: seconds,
       running: true,
-      endTime: Date.now() + seconds * 1000,
+      endTime: startedAt + seconds * 1000,
       finished: false,
     });
   }
 
   function pause() {
-    if (!session.running) return;
+    if (!session.running) {
+      return;
+    }
 
     const seconds = remainingTime(session, Date.now());
 
-    if (seconds === 0) {
+    if (seconds <= 0) {
       setNow(Date.now());
       return;
     }
@@ -278,14 +362,16 @@ function FocusTimer({ tasks }: FocusTimerProps) {
     });
   }
 
-  function changeDuration(value: SessionDuration) {
-    if (session.running) return;
+  function changeDuration(duration: Duration) {
+    if (session.running) {
+      return;
+    }
 
     commit({
       ...session,
-      duration: value,
+      duration,
       sessionId: "",
-      remainingSeconds: value * 60,
+      remainingSeconds: duration * 60,
       running: false,
       endTime: null,
       finished: false,
@@ -293,193 +379,357 @@ function FocusTimer({ tasks }: FocusTimerProps) {
   }
 
   function changeTask(taskId: string) {
-    if (session.running) return;
+    if (session.running) {
+      return;
+    }
 
     const task = tasks.find((item) => item.id === taskId);
 
+    if (!task) {
+      return;
+    }
+
     commit({
       ...session,
-      taskId,
-      taskTitle: task?.title ?? "",
-      projectId: task?.projectId,
-      projectName: task ? projectSnapshot(task).projectName : undefined,
+      taskId: task.id,
+      taskTitle: task.title,
+      ...projectSnapshot(task),
       sessionId: "",
       remainingSeconds: totalSeconds,
       running: false,
       endTime: null,
       finished: false,
     });
+
+    setTaskMenuOpen(false);
+    setTaskSearch("");
   }
 
-  const status = session.finished
-    ? "Session complete!"
-    : session.running
-      ? "Stay focused"
-      : remaining < totalSeconds
-        ? "Session paused"
-        : "Ready to focus";
+  function toggleTaskMenu() {
+    if (session.running || tasks.length === 0) {
+      return;
+    }
+
+    setTaskMenuOpen((previous) => !previous);
+
+    setTaskSearch("");
+  }
 
   return (
-    <>
-      <section className="fm-focus-timer" aria-label="Focus session timer">
+    <section className="fm-focus-timer" aria-label="Focus timer">
+      <header className="fm-focus-timer-header">
         <div className="fm-focus-timer-heading">
-          <div>
-            <p className="fm-focus-timer-eyebrow">DEEP WORK</p>
-            <h2>Focus Session ⏱️</h2>
-          </div>
+          <span className="fm-focus-timer-kicker">DEEP WORK</span>
 
-          <span
-            className={`fm-focus-timer-status ${
-              session.running ? "running" : ""
-            } ${session.finished ? "finished" : ""}`}
-            role="status"
-          >
-            {status}
-          </span>
+          <h2>Focus Studio</h2>
+
+          <p>One task. One moment. Full attention.</p>
         </div>
 
-        <p className="fm-focus-timer-description">
-          Work on one task at a time. Completed sessions are automatically
-          tracked by task and project.
-        </p>
+        <span
+          className={`fm-focus-timer-status ${
+            session.running ? "is-running" : ""
+          }`}
+          role="status"
+        >
+          <span className="fm-focus-timer-status-dot" aria-hidden="true" />
 
-        <div className="fm-focus-timer-settings">
-          <div className="fm-focus-timer-field">
-            <label htmlFor="fm-focus-task">Focus Task</label>
+          {status}
+        </span>
+      </header>
 
-            <select
-              id="fm-focus-task"
-              value={selectedTask?.id ?? ""}
-              disabled={session.running || tasks.length === 0}
-              onChange={(event) => changeTask(event.target.value)}
-            >
-              {tasks.length === 0 ? (
-                <option value="">Choose focus tasks first</option>
-              ) : (
-                <>
-                  {session.taskId && !selectedTask && (
-                    <option value="">Previous task unavailable</option>
-                  )}
-
-                  {tasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-          </div>
-
-          <div className="fm-focus-timer-field">
-            <label htmlFor="fm-focus-duration">Duration</label>
-
-            <select
-              id="fm-focus-duration"
-              value={session.duration}
-              disabled={session.running}
-              onChange={(event) =>
-                changeDuration(Number(event.target.value) as SessionDuration)
-              }
-            >
-              <option value={15}>15 minutes</option>
-              <option value={25}>25 minutes</option>
-              <option value={45}>45 minutes</option>
-            </select>
-          </div>
-        </div>
-
+      <div className="fm-focus-timer-workspace">
         <div className="fm-focus-timer-clock">
-          <div
-            className={`fm-focus-timer-time ${session.running ? "active" : ""}`}
-            role="timer"
-            aria-label="Time remaining"
-          >
-            {displayTime(remaining)}
+          <div className="fm-focus-timer-clock-top">
+            <span>FOCUS TIME</span>
+            <span>{session.duration} MIN</span>
           </div>
 
-          <p className="fm-focus-timer-subtitle">
-            {session.finished
-              ? "You completed your focus session!"
-              : session.running
-                ? "One task. One step at a time."
-                : "Focus time remaining"}
-          </p>
+          <div className="fm-focus-timer-time-wrap">
+            <span
+              className="fm-focus-timer-time"
+              role="timer"
+              aria-label={`${timeDisplay(remaining)} remaining`}
+            >
+              {timeDisplay(remaining)}
+            </span>
+
+            <span className="fm-focus-timer-caption">
+              {session.finished
+                ? "Beautiful work."
+                : session.running
+                  ? "Stay in your flow."
+                  : isPaused
+                    ? "Your time is saved."
+                    : "Make every minute count."}
+            </span>
+          </div>
 
           <div
             className="fm-focus-timer-track"
             role="progressbar"
-            aria-label="Focus session progress"
+            aria-label="Session progress"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(progress)}
           >
             <div
               className="fm-focus-timer-fill"
-              style={{ width: `${progress}%` }}
+              style={{
+                width: `${progress}%`,
+              }}
             />
           </div>
 
-          <span className="fm-focus-timer-progress-label">
-            {Math.round(progress)}% completed
-          </span>
-        </div>
-
-        {session.finished && (
-          <div className="fm-focus-timer-complete" role="status">
-            🎉 Great work! Your session has been added to Focus History.
-          </div>
-        )}
-
-        {!selectedTask && session.taskId !== "" && (
-          <div className="fm-focus-timer-complete" role="status">
-            Your previous task is no longer in today's focus list. Choose
-            another focus task.
-          </div>
-        )}
-
-        <div className="fm-focus-timer-actions">
-          {session.running ? (
-            <button
-              type="button"
-              className="fm-focus-timer-primary"
-              onClick={pause}
-            >
-              ⏸ Pause
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="fm-focus-timer-primary"
-              disabled={!selectedTask}
-              onClick={start}
-            >
-              ▶{" "}
-              {session.finished
-                ? "Start Again"
-                : remaining < totalSeconds
-                  ? "Resume Focus"
-                  : "Start Focus"}
-            </button>
-          )}
-
-          <button
-            type="button"
-            className="fm-focus-timer-secondary"
-            onClick={reset}
+          <div
+            className="fm-focus-timer-durations"
+            role="group"
+            aria-label="Session duration"
           >
-            ↺ Reset
-          </button>
+            {DURATIONS.map((duration) => (
+              <button
+                key={duration}
+                type="button"
+                className={`fm-focus-timer-duration ${
+                  session.duration === duration ? "active" : ""
+                }`}
+                aria-pressed={session.duration === duration}
+                disabled={session.running}
+                onClick={() => changeDuration(duration)}
+              >
+                {duration} min
+              </button>
+            ))}
+          </div>
         </div>
 
-        <p className="fm-focus-timer-hint">
-          Sessions are saved locally. Only completed sessions are counted in
-          productivity analytics.
-        </p>
-      </section>
+        <div className="fm-focus-timer-control-area">
+          <div className="fm-focus-timer-task-area" ref={menuRef}>
+            <span className="fm-focus-timer-field-label">WORKING ON</span>
 
-      <FocusHistory />
-    </>
+            <button
+              type="button"
+              className={`fm-focus-timer-task-button ${
+                taskMenuOpen ? "is-open" : ""
+              }`}
+              onClick={toggleTaskMenu}
+              disabled={session.running || tasks.length === 0}
+              aria-expanded={taskMenuOpen}
+              aria-haspopup="listbox"
+              aria-controls="fm-focus-task-options"
+            >
+              <span className="fm-focus-timer-task-symbol">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="8.5" />
+
+                  <path d="m8.5 12 2.5 2.5 4.5-5" />
+                </svg>
+              </span>
+
+              <span className="fm-focus-timer-task-text">
+                <strong>
+                  {selectedTask?.title ??
+                    (taskMissing
+                      ? "Choose another priority"
+                      : "Select a focus task")}
+                </strong>
+
+                <small>
+                  {tasks.length} focus{" "}
+                  {tasks.length === 1 ? "priority" : "priorities"} available
+                </small>
+              </span>
+
+              <svg
+                className="fm-focus-timer-chevron"
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+
+            {taskMenuOpen && (
+              <div
+                className="fm-focus-timer-task-menu"
+                id="fm-focus-task-options"
+              >
+                <div className="fm-focus-timer-task-menu-head">
+                  <strong>Choose a task</strong>
+
+                  <span>{tasks.length} available</span>
+                </div>
+
+                {tasks.length > 4 && (
+                  <div className="fm-focus-timer-search">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="7" />
+
+                      <path d="m20 20-4-4" />
+                    </svg>
+
+                    <input
+                      ref={searchRef}
+                      type="text"
+                      value={taskSearch}
+                      onChange={(event) => setTaskSearch(event.target.value)}
+                      placeholder="Search tasks..."
+                      aria-label="Search focus tasks"
+                    />
+                  </div>
+                )}
+
+                <div className="fm-focus-timer-task-list">
+                  {visibleTasks.length === 0 ? (
+                    <p className="fm-focus-timer-no-results">
+                      No matching tasks.
+                    </p>
+                  ) : (
+                    visibleTasks.map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        className={`fm-focus-timer-task-option ${
+                          selectedTask?.id === task.id ? "selected" : ""
+                        }`}
+                        onClick={() => changeTask(task.id)}
+                      >
+                        <span className="fm-focus-timer-option-circle">
+                          {selectedTask?.id === task.id ? "✓" : ""}
+                        </span>
+
+                        <span>{task.title}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p className="fm-focus-timer-helper">
+            {session.running
+              ? "Your session is running. Stay with this task."
+              : session.finished
+                ? "Session complete. Your time has been saved."
+                : isPaused
+                  ? "Pick up exactly where you left off."
+                  : "Choose your task, then press Start."}
+          </p>
+
+          <div className="fm-focus-timer-actions">
+            {session.running ? (
+              <button
+                type="button"
+                className="fm-focus-timer-primary"
+                onClick={pause}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 5v14M15 5v14" />
+                </svg>
+                Pause focus
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="fm-focus-timer-primary"
+                disabled={!selectedTask}
+                onClick={start}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M8 5.5v13l10-6.5z" />
+                </svg>
+
+                {session.finished
+                  ? "Start again"
+                  : isPaused
+                    ? "Resume focus"
+                    : "Start focus"}
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="fm-focus-timer-secondary"
+              onClick={reset}
+              title="Reset session"
+              aria-label="Reset timer"
+            >
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {taskMissing && (
+        <p className="fm-focus-timer-notice">
+          Your previous task is no longer among today's priorities. Select
+          another task to start a new focus session.
+        </p>
+      )}
+
+      {session.finished && (
+        <p className="fm-focus-timer-notice" role="status">
+          ✓ Session completed and saved to Focus History.
+        </p>
+      )}
+    </section>
   );
 }
 
