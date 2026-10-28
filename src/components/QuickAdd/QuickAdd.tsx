@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+
 import {
   createInboxItems,
   loadInbox,
   saveInbox,
 } from "../../utils/inboxStorage";
+
+import {
+  downloadFlowMindBackup,
+  readFlowMindBackup,
+  restoreFlowMindBackup,
+} from "../../utils/backup";
 
 import "./QuickAdd.css";
 
@@ -17,12 +25,17 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
+  const [restoring, setRestoring] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const itemCount = text.split(/\r?\n/).filter((line) => line.trim()).length;
 
   function openQuickAdd() {
     previousFocusRef.current =
@@ -39,9 +52,9 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
     setOpen(false);
     setError("");
 
-    window.setTimeout(() => {
+    window.requestAnimationFrame(() => {
       previousFocusRef.current?.focus();
-    }, 0);
+    });
   }
 
   useEffect(() => {
@@ -49,33 +62,29 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
 
-        if (event.repeat) {
-          return;
-        }
+        if (event.repeat) return;
 
-        setOpen((previous) => {
-          if (!previous) {
-            previousFocusRef.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
-          }
+        previousFocusRef.current =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
 
-          setError("");
-          setSavedCount(0);
-
-          return true;
-        });
+        setOpen(true);
+        setError("");
+        setSavedCount(0);
       }
 
       if (event.key === "Escape") {
-        setOpen((previous) => {
-          if (previous) {
-            event.preventDefault();
-            return false;
-          }
+        setOpen((current) => {
+          if (!current) return current;
 
-          return previous;
+          event.preventDefault();
+
+          window.requestAnimationFrame(() => {
+            previousFocusRef.current?.focus();
+          });
+
+          return false;
         });
       }
     }
@@ -88,9 +97,7 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
 
     textareaRef.current?.focus();
 
@@ -99,18 +106,16 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
         return;
       }
 
-      const focusable = Array.from(
+      const elements = Array.from(
         dialogRef.current.querySelectorAll<
           HTMLButtonElement | HTMLTextAreaElement
         >("button:not(:disabled), textarea:not(:disabled)"),
       );
 
-      if (focusable.length === 0) {
-        return;
-      }
+      if (elements.length === 0) return;
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const first = elements[0];
+      const last = elements[elements.length - 1];
 
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
@@ -133,17 +138,13 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
 
     if (newItems.length === 0) {
       setError("Write at least one task or idea.");
-
       return;
     }
 
-    const existing = loadInbox();
-
-    const saved = saveInbox([...newItems, ...existing]);
+    const saved = saveInbox([...newItems, ...loadInbox()]);
 
     if (!saved) {
-      setError("Could not save your notes. " + "Please try again.");
-
+      setError("Could not save your notes. Please try again.");
       return;
     }
 
@@ -151,18 +152,70 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
     setText("");
     setError("");
     setOpen(false);
-
-    window.setTimeout(() => {
-      setSavedCount(0);
-    }, 3500);
   }
 
   function handleTextareaKeyDown(
-    event: React.KeyboardEvent<HTMLTextAreaElement>,
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
   ) {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
       saveQuickAdd();
+    }
+  }
+
+  function handleExport() {
+    try {
+      const count = downloadFlowMindBackup();
+
+      setError("");
+
+      window.alert(
+        `Backup prepared with ${count} local data entries.\n` +
+          "Save the JSON file somewhere safe.",
+      );
+    } catch (cause) {
+      console.error("FlowMind: backup export failed", cause);
+
+      setError("Backup could not be exported.");
+    }
+  }
+
+  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) return;
+
+    setRestoring(true);
+    setError("");
+
+    try {
+      const backup = await readFlowMindBackup(file);
+
+      const confirmed = window.confirm(
+        "Restore FlowMind backup?\n\n" +
+          `Backup date: ${backup.exportedAt}\n` +
+          `Data entries: ${Object.keys(backup.data).length}\n\n` +
+          "This will REPLACE the current FlowMind data.\n" +
+          "Export a backup of your current data first.",
+      );
+
+      if (!confirmed) return;
+
+      restoreFlowMindBackup(backup);
+
+      // Reload so that all pages initialize from
+      // the restored local data.
+      window.location.reload();
+    } catch (cause) {
+      console.error("FlowMind: backup restore failed", cause);
+
+      setError(
+        cause instanceof Error ? cause.message : "Could not restore backup.",
+      );
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -173,8 +226,8 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
           type="button"
           className="fm-quick-add-trigger"
           onClick={openQuickAdd}
-          aria-label="Open Quick Add"
           title="Quick Add (Ctrl + K)"
+          aria-label="Open Quick Add"
         >
           <span className="fm-quick-add-trigger-icon">+</span>
 
@@ -209,8 +262,8 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
           }}
         >
           <div
-            className="fm-quick-add-dialog"
             ref={dialogRef}
+            className="fm-quick-add-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="fm-quick-add-title"
@@ -268,8 +321,7 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
             />
 
             <div className="fm-quick-add-counter">
-              {text.split(/\r?\n/).filter((line) => line.trim()).length} item(s)
-              ready
+              {itemCount} item(s) ready
             </div>
 
             {error && (
@@ -307,6 +359,55 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
                   + Save to Inbox
                 </button>
               </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+                borderTop: "1px solid #343747",
+                paddingTop: 18,
+                marginTop: 20,
+              }}
+            >
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 140,
+                  color: "#a3a8b8",
+                  fontSize: 12,
+                }}
+              >
+                Data Backup & Restore
+              </span>
+
+              <button
+                type="button"
+                className="fm-quick-add-secondary"
+                onClick={handleExport}
+              >
+                ↓ Backup
+              </button>
+
+              <button
+                type="button"
+                className="fm-quick-add-secondary"
+                disabled={restoring}
+                onClick={() => fileRef.current?.click()}
+              >
+                ↑ Restore
+              </button>
+
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,application/json"
+                aria-label="Choose FlowMind backup"
+                style={{ display: "none" }}
+                onChange={handleImport}
+              />
             </div>
           </div>
         </div>
