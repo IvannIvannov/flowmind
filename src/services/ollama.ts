@@ -56,12 +56,28 @@ const MONTHS: Record<string, number> = {
 const DAY_NAMES = Object.keys(WEEKDAYS).join("|");
 const MONTH_NAMES = Object.keys(MONTHS).join("|");
 
-function normalize(value: string): string {
-  return value.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
-}
+const DATE_PATTERN = new RegExp(
+  [
+    "до края на седмицата",
+    "до края на месеца",
+    "вдругиден",
+    "утре",
+    "днес",
+    "след\\s+\\d{1,3}\\s+дни?",
+    "(?:на\\s+|до\\s+)?\\d{4}-\\d{2}-\\d{2}",
+    "(?:на\\s+|до\\s+)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?",
+    `(?:на\\s+|до\\s+)?\\d{1,2}\\s+(?:${MONTH_NAMES})(?:\\s+\\d{4})?`,
+    `(?:(?:другата|другия|следващата|следващия)\\s+)?(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})`,
+  ].join("|"),
+  "giu",
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalize(text: string): string {
+  return text.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
 }
 
 function dateKey(date: Date): string {
@@ -72,7 +88,7 @@ function dateKey(date: Date): string {
   ].join("-");
 }
 
-function createDate(year: number, month: number, day: number): Date | null {
+function makeDate(year: number, month: number, day: number): Date | null {
   const date = new Date(year, month - 1, day);
 
   if (
@@ -86,10 +102,11 @@ function createDate(year: number, month: number, day: number): Date | null {
   return date;
 }
 
-function addDays(date: Date, count: number): Date {
+function addDays(date: Date, amount: number): Date {
   const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  result.setDate(result.getDate() + count);
+  result.setDate(result.getDate() + amount);
+
   return result;
 }
 
@@ -98,7 +115,9 @@ function resolveDate(expression: string, today: Date): string {
     .replace(/[.!?,;]+$/g, "")
     .trim();
 
-  if (text === "днес") return dateKey(today);
+  if (text === "днес") {
+    return dateKey(today);
+  }
 
   if (text === "утре") {
     return dateKey(addDays(today, 1));
@@ -126,7 +145,7 @@ function resolveDate(expression: string, today: Date): string {
   const iso = text.match(/^(?:на\s+|до\s+)?(\d{4})-(\d{2})-(\d{2})$/);
 
   if (iso) {
-    const result = createDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    const result = makeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
 
     return result ? dateKey(result) : "";
   }
@@ -141,13 +160,13 @@ function resolveDate(expression: string, today: Date): string {
 
     let year = numeric[3] ? Number(numeric[3]) : today.getFullYear();
 
-    let result = createDate(year, month, day);
+    let result = makeDate(year, month, day);
 
     if (!result) return "";
 
     if (!numeric[3] && dateKey(result) < dateKey(today)) {
       year += 1;
-      result = createDate(year, month, day);
+      result = makeDate(year, month, day);
     }
 
     return result ? dateKey(result) : "";
@@ -163,13 +182,13 @@ function resolveDate(expression: string, today: Date): string {
 
     let year = natural[3] ? Number(natural[3]) : today.getFullYear();
 
-    let result = createDate(year, month, day);
+    let result = makeDate(year, month, day);
 
     if (!result) return "";
 
     if (!natural[3] && dateKey(result) < dateKey(today)) {
       year += 1;
-      result = createDate(year, month, day);
+      result = makeDate(year, month, day);
     }
 
     return result ? dateKey(result) : "";
@@ -203,29 +222,16 @@ function resolveDate(expression: string, today: Date): string {
 }
 
 function findDates(section: string): string[] {
-  const pattern = new RegExp(
-    [
-      "до края на седмицата",
-      "до края на месеца",
-      "вдругиден",
-      "утре",
-      "днес",
-      "след\\s+\\d{1,3}\\s+дни?",
-      "(?:на\\s+|до\\s+)?\\d{4}-\\d{2}-\\d{2}",
-      "(?:на\\s+|до\\s+)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?",
-      `(?:на\\s+|до\\s+)?\\d{1,2}\\s+(?:${MONTH_NAMES})(?:\\s+\\d{4})?`,
-      `(?:(?:другата|другия|следващата|следващия)\\s+)?(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})`,
-    ].join("|"),
-    "giu",
-  );
-
-  return Array.from(section.matchAll(pattern), (match) => match[0].trim());
+  return Array.from(section.matchAll(DATE_PATTERN), (match) => match[0].trim());
 }
 
 function getDeadline(
   section: string,
   today: Date,
-): { date: string; warning: string } {
+): {
+  date: string;
+  warning: string;
+} {
   const dates = findDates(section)
     .map((expression) => resolveDate(expression, today))
     .filter(Boolean);
@@ -237,7 +243,10 @@ function getDeadline(
   }
 
   if (uniqueDates.length === 1) {
-    return { date: uniqueDates[0], warning: "" };
+    return {
+      date: uniqueDates[0],
+      warning: "",
+    };
   }
 
   return {
@@ -263,13 +272,17 @@ function getPriority(section: string): Priority {
 }
 
 function findProject(value: unknown, projects: Project[]): string {
-  if (typeof value !== "string") return "";
+  if (typeof value !== "string") {
+    return "";
+  }
 
-  const name = normalize(value);
+  const requested = normalize(value);
 
-  const project = projects.find((item) => normalize(item.name) === name);
+  const found = projects.find(
+    (project) => normalize(project.name) === requested,
+  );
 
-  return project?.id ?? "";
+  return found?.id ?? "";
 }
 
 function guessProject(section: string, projects: Project[]): string {
@@ -277,18 +290,11 @@ function guessProject(section: string, projects: Project[]): string {
 
   const matched = projects.filter(
     (project) =>
-      project.name.trim() && source.includes(normalize(project.name)),
+      project.name.trim().length > 0 &&
+      source.includes(normalize(project.name)),
   );
 
   return matched.length === 1 ? matched[0].id : "";
-}
-
-function splitNote(note: string): string[] {
-  return note
-    .replace(/\r\n/g, "\n")
-    .split(/\n+|[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
-    .map((part) => part.trim())
-    .filter(Boolean);
 }
 
 function isClearlyPastInformation(section: string): boolean {
@@ -317,6 +323,76 @@ function looksLikePendingAction(section: string): boolean {
   );
 }
 
+function startsWithAction(section: string): boolean {
+  const text = normalize(section);
+
+  const datePrefix = new RegExp(
+    [
+      "^",
+      "(?:",
+      "утре|вдругиден|днес|",
+      "до\\s+края\\s+на\\s+(?:седмицата|месеца)|",
+      `(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})|`,
+      `(?:другата|другия|следващата|следващия)\\s+(?:${DAY_NAMES})|`,
+      `(?:на|до)\\s+\\d{1,2}\\s+(?:${MONTH_NAMES})`,
+      ")",
+      "\\s+",
+    ].join(""),
+    "u",
+  );
+
+  const withoutDate = text.replace(datePrefix, "");
+
+  return /^(?:трябва\s+да|да\s+(?:изпратя|пратя|подготвя|монтирам|проверя|организирам|направя|създам|публикувам|снимам|обработя|редактирам|кача)(?:\s|$)|изпрати(?:\s|$)|подготви(?:\s|$)|монтирай(?:\s|$)|провери(?:\s|$)|организирай(?:\s|$)|направи(?:\s|$)|публикувай(?:\s|$))/u.test(
+    withoutDate,
+  );
+}
+
+function splitClauses(sentence: string): string[] {
+  const parts: string[] = [];
+  const separator = /,\s*|\s+(?:и|а)\s+/giu;
+
+  let start = 0;
+
+  for (const match of sentence.matchAll(separator)) {
+    if (match.index === undefined) continue;
+
+    const nextStart = match.index + match[0].length;
+
+    const remainder = sentence.slice(nextStart);
+
+    if (!startsWithAction(remainder)) {
+      continue;
+    }
+
+    const current = sentence.slice(start, match.index).trim();
+
+    if (current) {
+      parts.push(current);
+    }
+
+    start = nextStart;
+  }
+
+  const last = sentence.slice(start).trim();
+
+  if (last) {
+    parts.push(last);
+  }
+
+  return parts;
+}
+
+function splitNote(note: string): string[] {
+  const sentences = note
+    .replace(/\r\n/g, "\n")
+    .split(/\n+|[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return sentences.flatMap(splitClauses);
+}
+
 function fallbackTitle(section: string): string {
   let title = section.trim();
 
@@ -333,7 +409,9 @@ function fallbackTitle(section: string): string {
     .replace(/^[,;:\s]+|[,;:\s.]+$/g, "")
     .trim();
 
-  if (!title) title = section.trim();
+  if (!title) {
+    title = section.trim();
+  }
 
   return (title.charAt(0).toLocaleUpperCase("bg-BG") + title.slice(1)).slice(
     0,
@@ -401,17 +479,24 @@ Return JSON:
 
 RULES:
 - Include actions that still need to be done.
-- Exclude meetings or events that already happened.
-- Keep all explicit pending actions.
-- Short Bulgarian task titles.
-- No invented actions or subtasks.
-- Use an available project name only if certain.
+- Exclude past meetings and completed events.
+- Keep every explicit pending action.
+- Write short Bulgarian task titles.
+- Do not invent actions or subtasks.
+- Keep a single action with several objects
+  as one task.
+- Use a project name only if it exactly
+  matches an available project.
 - Otherwise set projectName to "".
-- If no pending actions, return {"tasks":[]}.
+- If there are no tasks, return {"tasks":[]}.
 
 EXAMPLES:
+
 INPUT: До петък трябва да изпратя имейл.
 OUTPUT: {"tasks":[{"title":"Изпрати имейл","projectName":""}]}
+
+INPUT: Подготви снимки и видеа за клиента.
+OUTPUT: {"tasks":[{"title":"Подготви снимки и видеа за клиента","projectName":""}]}
 
 INPUT: Днес проведохме среща.
 OUTPUT: {"tasks":[]}
@@ -429,7 +514,10 @@ async function analyzeSection(
   today: Date,
 ): Promise<SectionResult> {
   if (isClearlyPastInformation(section)) {
-    return { tasks: [], warnings: [] };
+    return {
+      tasks: [],
+      warnings: [],
+    };
   }
 
   const tasks: SuggestedTask[] = [];
@@ -477,6 +565,7 @@ async function analyzeSection(
     modelTasks = parsed.tasks;
   } catch (error) {
     console.error("Ollama section error:", error);
+
     aiFailed = true;
   }
 
@@ -529,7 +618,10 @@ async function analyzeSection(
     warnings.push(`Could not analyze this section: "${section}".`);
   }
 
-  return { tasks, warnings };
+  return {
+    tasks,
+    warnings,
+  };
 }
 
 export async function extractTasksWithOllama(
