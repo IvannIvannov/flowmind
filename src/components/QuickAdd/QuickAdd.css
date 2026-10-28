@@ -1,0 +1,330 @@
+/* FLOWMIND - GLOBAL QUICK ADD */
+
+.fm-quick-add-access {
+    position: fixed;
+    top: 22px;
+    right: 26px;
+    z-index: 90;
+}
+
+.fm-quick-add-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 9px 13px;
+    border: 1px solid #625080;
+    border-radius: 11px;
+    background: #302a45;
+    color: #f1eaff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 8px 28px #00000033;
+    cursor: pointer;
+}
+
+.fm-quick-add-trigger:hover {
+    background: #403456;
+    border-color: #8b5cf6;
+}
+
+.fm-quick-add-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    background: #8b5cf6;
+    color: #ffffff;
+    border-radius: 7px;
+    font-size: 19px;
+    line-height: 1;
+}
+
+.fm-quick-add-trigger kbd {
+    padding: 5px 7px;
+    border-radius: 6px;
+    background: #1c1c2b;
+    color: #bcb0d6;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+/* BACKDROP */
+
+.fm-quick-add-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: min(12vh, 110px) 20px 24px;
+    box-sizing: border-box;
+    background: #070811c9;
+    overflow-y: auto;
+}
+
+/* DIALOG */
+
+.fm-quick-add-dialog {
+    width: min(100%, 670px);
+    box-sizing: border-box;
+    padding: 28px;
+    border: 1px solid #625080;
+    border-radius: 18px;
+    background: #1b1d28;
+    color: #f8fafc;
+    box-shadow: 0 24px 80px #00000077;
+}
+
+.fm-quick-add-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 15px;
+}
+
+.fm-quick-add-eyebrow {
+    margin: 0 0 10px;
+    color: #a78bfa;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+}
+
+.fm-quick-add-header h2 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 23px;
+}
+
+.fm-quick-add-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 9px;
+    background: #3a2530;
+    color: #fda4af;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.fm-quick-add-close:hover {
+    background: #69313e;
+}
+
+.fm-quick-add-description {
+    margin: 17px 0 24px;
+    color: #a3a8b8;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.fm-quick-add-label {
+    display: block;
+    margin-bottom: 10px;
+    color: #c5c8d5;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.fm-quick-add-dialog textarea {
+    width: 100%;
+    min-height: 175px;
+    box-sizing: border-box;
+    padding: 17px;
+    resize: vertical;
+    border: 1px solid #383b4d;
+    border-radius: 12px;
+    background: #12141d;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.fm-quick-add-dialog textarea::placeholder {
+    color: #777e91;
+}
+
+.fm-quick-add-counter {
+    margin-top: 10px;
+    color: #9298aa;
+    font-size: 11px;
+    text-align: right;
+}
+
+.fm-quick-add-error {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border: 1px solid #69313e;
+    border-radius: 9px;
+    background: #3a2530;
+    color: #fda4af;
+    font-size: 12px;
+}
+
+/* FOOTER */
+
+.fm-quick-add-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 17px;
+    margin-top: 23px;
+    padding-top: 20px;
+    border-top: 1px solid #343747;
+}
+
+.fm-quick-add-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    color: #9298aa;
+    font-size: 11px;
+}
+
+.fm-quick-add-shortcuts kbd {
+    display: inline-block;
+    padding: 4px 6px;
+    border: 1px solid #45465b;
+    border-radius: 5px;
+    background: #252735;
+    color: #d4c7ff;
+    font-family: inherit;
+    font-size: 10px;
+}
+
+.fm-quick-add-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.fm-quick-add-primary,
+.fm-quick-add-secondary {
+    min-height: 42px;
+    padding: 11px 17px;
+    border: none;
+    border-radius: 9px;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.fm-quick-add-primary {
+    background: #8b5cf6;
+}
+
+.fm-quick-add-primary:hover:not(:disabled) {
+    background: #7c3aed;
+}
+
+.fm-quick-add-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.fm-quick-add-secondary {
+    background: #343747;
+}
+
+.fm-quick-add-secondary:hover {
+    background: #45495b;
+}
+
+/* TOAST */
+
+.fm-quick-add-toast {
+    position: fixed;
+    right: 26px;
+    bottom: 25px;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 13px;
+    max-width: min(440px, 90vw);
+    padding: 15px 18px;
+    border: 1px solid #28694f;
+    border-radius: 12px;
+    background: #183b30;
+    color: #a7f3d0;
+    font-size: 13px;
+    box-shadow: 0 12px 35px #00000055;
+}
+
+.fm-quick-add-toast button {
+    border: none;
+    background: transparent;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* FOCUS */
+
+.fm-quick-add-trigger:focus-visible,
+.fm-quick-add-dialog button:focus-visible,
+.fm-quick-add-dialog textarea:focus-visible,
+.fm-quick-add-toast button:focus-visible {
+    outline: 2px solid #c4b5fd;
+    outline-offset: 3px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 750px) {
+    .fm-quick-add-access {
+        top: 14px;
+        right: 14px;
+    }
+
+    .fm-quick-add-trigger {
+        min-height: 40px;
+        padding: 8px 11px;
+    }
+
+    .fm-quick-add-trigger kbd {
+        display: none;
+    }
+
+    .fm-quick-add-dialog {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .fm-quick-add-trigger>span:nth-child(2) {
+        display: none;
+    }
+
+    .fm-quick-add-overlay {
+        padding: 60px 12px 15px;
+    }
+
+    .fm-quick-add-header h2 {
+        font-size: 20px;
+    }
+
+    .fm-quick-add-actions {
+        width: 100%;
+    }
+
+    .fm-quick-add-actions button {
+        flex: 1;
+    }
+
+    .fm-quick-add-toast {
+        right: 12px;
+        bottom: 12px;
+    }
+}

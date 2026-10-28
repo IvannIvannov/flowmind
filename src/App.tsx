@@ -9,6 +9,7 @@ import Dashboard from "./components/Dashboard/Dashboard";
 import Inbox from "./components/Inbox/Inbox";
 import MyDay from "./components/MyDay/MyDay";
 import Projects from "./components/Projects/Projects";
+import QuickAdd from "./components/QuickAdd/QuickAdd";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Tasks from "./components/Tasks/Tasks";
 
@@ -85,9 +86,7 @@ function parseProjectAliases(value: string): string[] {
   for (const item of value.split(",")) {
     const alias = item.trim().replace(/\s+/g, " ");
 
-    if (!alias) {
-      continue;
-    }
+    if (!alias) continue;
 
     const normalized = normalizeProjectName(alias);
 
@@ -170,6 +169,8 @@ function App() {
       });
   }, [tasks, projects, taskFilters]);
 
+  // TASK FORM
+
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
       ...previous,
@@ -185,9 +186,14 @@ function App() {
   }
 
   function resetTaskForm() {
-    setTaskForm({ ...INITIAL_TASK_FORM });
+    setTaskForm({
+      ...INITIAL_TASK_FORM,
+    });
+
     setPendingInboxId(null);
   }
+
+  // TASK MANAGEMENT
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -234,9 +240,9 @@ function App() {
 
         if (!removed) {
           window.alert(
-            "Task created, but its Inbox item " +
-              "could not be removed. You can delete " +
-              "the Inbox item manually.",
+            "Task created, but the Inbox item " +
+              "could not be removed. " +
+              "You can delete it manually.",
           );
         }
       }
@@ -284,6 +290,8 @@ function App() {
     }
   }
 
+  // AI ASSISTANT
+
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
     const name = draft.title.trim();
 
@@ -306,6 +314,8 @@ function App() {
     setTasks((previous) => [newTask, ...previous]);
   }
 
+  // UNIVERSAL INBOX
+
   function organizeInboxItem(item: InboxItem) {
     setPendingInboxId(item.id);
 
@@ -324,6 +334,8 @@ function App() {
     setPage("tasks");
   }
 
+  // PROJECT FORM
+
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
       ...previous,
@@ -336,6 +348,8 @@ function App() {
       ...INITIAL_PROJECT_FORM,
     });
   }
+
+  // PROJECT MANAGEMENT
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -368,8 +382,9 @@ function App() {
 
     if (conflictingProject) {
       window.alert(
-        "A name or alternative name is already " +
-          `used by "${conflictingProject.name}". ` +
+        "A name or alternative name is " +
+          "already used by " +
+          `"${conflictingProject.name}". ` +
           "Please choose unique project names.",
       );
 
@@ -472,6 +487,8 @@ function App() {
     setPage("tasks");
   }
 
+  // CALENDAR
+
   function addTaskFromCalendar(date: string) {
     setPendingInboxId(null);
 
@@ -498,9 +515,13 @@ function App() {
     }
   }
 
+  // APPLICATION
+
   return (
     <div className="app">
       <Sidebar currentPage={page} onNavigate={setPage} />
+
+      <QuickAdd onOpenInbox={() => setPage("inbox")} />
 
       <main className="content">
         {page === "dashboard" && (
