@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
-
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import type {
   Task,
   Project,
@@ -10,16 +9,12 @@ import type {
   Priority,
   TaskSort,
 } from "../../types";
-
 import { formatDate, getTodayKey, isOverdue, isToday } from "../../utils/dates";
-
 import {
   getTaskInsights,
   matchesSmartTaskFilter,
 } from "../../utils/taskInsights";
-
 import type { SmartTaskFilter } from "../../utils/taskInsights";
-
 import "./Tasks.css";
 
 interface TasksProps {
@@ -37,21 +32,111 @@ interface TasksProps {
   onStatusChange: (id: string, status: TaskStatus) => void;
 }
 
+type IconName =
+  | "plus"
+  | "search"
+  | "filter"
+  | "chevron"
+  | "check"
+  | "calendar"
+  | "edit"
+  | "trash"
+  | "close"
+  | "arrow"
+  | "list";
+
 const QUICK_FILTERS: {
   id: SmartTaskFilter;
   label: string;
-  icon: string;
 }[] = [
-  { id: "all", label: "All Tasks", icon: "📋" },
-  { id: "today", label: "Today", icon: "📅" },
-  { id: "overdue", label: "Overdue", icon: "⚠️" },
-  { id: "upcoming", label: "Next 7 Days", icon: "🗓️" },
-  {
-    id: "high-priority",
-    label: "High Priority",
-    icon: "🔥",
-  },
+  { id: "all", label: "All tasks" },
+  { id: "today", label: "Today" },
+  { id: "overdue", label: "Overdue" },
+  { id: "upcoming", label: "Next 7 days" },
+  { id: "high-priority", label: "High priority" },
 ];
+
+const STATUS_OPTIONS: {
+  value: TaskStatus;
+  label: string;
+}[] = [
+  { value: "todo", label: "To do" },
+  { value: "in-progress", label: "In progress" },
+  { value: "completed", label: "Completed" },
+];
+
+const ANIMATION_MS = 420;
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, ReactNode> = {
+    plus: <path d="M12 5v14M5 12h14" />,
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-4-4" />
+      </>
+    ),
+    filter: (
+      <>
+        <path d="M4 7h16M7 12h10M10 17h4" />
+      </>
+    ),
+    chevron: <path d="m6 9 6 6 6-6" />,
+    check: <path d="m5 12 4 4 14-14" />,
+    calendar: (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M7 3v4M17 3v4M3 10h18" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="M12 20h9" />
+        <path d="m16 4 4 4L9 19l-5 1 1-5Z" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M3 6h18M8 6V4h8v2M5 6l1 14h12l1-14" />
+        <path d="M10 10v6M14 10v6" />
+      </>
+    ),
+    close: <path d="M18 6 6 18M6 6l12 12" />,
+    arrow: <path d="m7 17 10-10M8 7h9v9" />,
+    list: (
+      <>
+        <path d="M9 6h12M9 12h12M9 18h12" />
+        <path d="M4 6h.01M4 12h.01M4 18h.01" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
+function statusLabel(status: TaskStatus): string {
+  return (
+    STATUS_OPTIONS.find((option) => option.value === status)?.label ?? "To do"
+  );
+}
+
+function priorityLabel(priority: Priority): string {
+  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)} priority`;
+}
 
 function Tasks({
   tasks,
@@ -68,10 +153,31 @@ function Tasks({
   onStatusChange,
 }: TasksProps) {
   const [smartFilter, setSmartFilter] = useState<SmartTaskFilter>("all");
+  const [formOpen, setFormOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [openStatusId, setOpenStatusId] = useState<string | null>(null);
 
+  // Temporary visual state allows both directions to animate.
+  const [pending, setPending] = useState<Record<string, TaskStatus>>({});
+
+  const timers = useRef<Map<string, number>>(new Map());
+  const pendingActions = useRef<Map<string, TaskStatus>>(new Map());
+  const statusCallback = useRef(onStatusChange);
+  statusCallback.current = onStatusChange;
+
+  const formRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  const editing = Boolean(form.editingId);
   const today = getTodayKey();
 
   const insights = useMemo(() => getTaskInsights(tasks), [tasks]);
+
+  const completedCount = tasks.filter(
+    (task) => task.status === "completed",
+  ).length;
+
+  const activeCount = tasks.length - completedCount;
 
   const filteredTasks = useMemo(
     () =>
@@ -79,22 +185,85 @@ function Tasks({
     [visibleTasks, smartFilter],
   );
 
-  const completedCount = tasks.filter(
-    (task) => task.status === "completed",
-  ).length;
+  const groupedTasks = useMemo(
+    () => ({
+      inProgress: filteredTasks.filter((task) => task.status === "in-progress"),
+      todo: filteredTasks.filter((task) => task.status === "todo"),
+      completed: filteredTasks.filter((task) => task.status === "completed"),
+    }),
+    [filteredTasks],
+  );
 
-  function getProject(task: Task) {
+  const showGroups = smartFilter === "all" && filters.status === "all";
+
+  const hasAdvancedFilters =
+    filters.status !== "all" ||
+    filters.project !== "all" ||
+    filters.sort !== "newest";
+
+  useEffect(() => {
+    if (editing) setFormOpen(true);
+  }, [editing]);
+
+  useEffect(() => {
+    if (openStatusId === null) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Element &&
+        !event.target.closest(".fm-tasks-status-control")
+      ) {
+        setOpenStatusId(null);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenStatusId(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openStatusId]);
+
+  useEffect(() => {
+    if (!formOpen) return;
+
+    const frame = window.requestAnimationFrame(() => titleRef.current?.focus());
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [formOpen]);
+
+  useEffect(() => {
+    const activeTimers = timers.current;
+    const actions = pendingActions.current;
+
+    return () => {
+      activeTimers.forEach((handle) => window.clearTimeout(handle));
+      activeTimers.clear();
+
+      // Finish pending changes if the page is closed mid-animation.
+      actions.forEach((status, id) => statusCallback.current(id, status));
+      actions.clear();
+    };
+  }, []);
+
+  function projectFor(task: Task) {
     return projects.find((project) => project.id === task.projectId);
   }
 
   function deadlineLabel(task: Task): string {
-    if (!task.dueDate) {
-      return "";
-    }
+    if (!task.dueDate) return "";
 
     if (task.status !== "completed") {
       if (isOverdue(task.dueDate)) {
-        return `Overdue: ${formatDate(task.dueDate)}`;
+        return `Overdue · ${formatDate(task.dueDate)}`;
       }
 
       if (isToday(task.dueDate)) {
@@ -102,7 +271,7 @@ function Tasks({
       }
     }
 
-    return `Due: ${formatDate(task.dueDate)}`;
+    return formatDate(task.dueDate);
   }
 
   function deadlineClass(task: Task): string {
@@ -110,218 +279,454 @@ function Tasks({
       return "";
     }
 
-    if (isOverdue(task.dueDate)) {
-      return "overdue";
-    }
+    if (isOverdue(task.dueDate)) return "is-overdue";
+    if (task.dueDate === today) return "is-today";
 
-    if (task.dueDate === today) {
-      return "today";
-    }
+    return "";
+  }
 
-    return "upcoming";
+  function countForFilter(filter: SmartTaskFilter): number {
+    switch (filter) {
+      case "all":
+        return tasks.length;
+      case "today":
+        return insights.today;
+      case "overdue":
+        return insights.overdue;
+      case "upcoming":
+        return insights.upcoming;
+      case "high-priority":
+        return insights.highPriority;
+      default:
+        return 0;
+    }
   }
 
   function handleQuickFilter(filter: SmartTaskFilter) {
     setSmartFilter(filter);
+    setOpenStatusId(null);
 
-    // Clear status restrictions that could hide
-    // the active tasks in the selected smart filter.
     if (filter !== "all" && filters.status === "completed") {
       onFiltersChange({ status: "all" });
     }
   }
 
-  return (
-    <div className="fm-tasks">
-      <header className="fm-tasks-header">
-        <p className="fm-tasks-subtitle">STAY ORGANIZED</p>
+  function openCreateForm() {
+    if (editing) onCancelEdit();
 
-        <h1>My Tasks ✅</h1>
+    setFormOpen(true);
 
-        <p className="fm-tasks-description">
-          Manage tasks, projects, priorities and deadlines.
-        </p>
-      </header>
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+      titleRef.current?.focus();
+    });
+  }
 
-      {/* SMART TASK INSIGHTS */}
+  function closeForm() {
+    if (editing) onCancelEdit();
+    setFormOpen(false);
+  }
 
-      <section className="fm-tasks-insights" aria-label="Task overview">
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    onSubmit(event);
+
+    if (!form.title.trim()) return;
+    if (!editing) setFormOpen(false);
+  }
+
+  function handleEdit(task: Task) {
+    onEdit(task);
+    setFormOpen(true);
+    setOpenStatusId(null);
+
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
+  function changeStatus(task: Task, status: TaskStatus) {
+    setOpenStatusId(null);
+    onStatusChange(task.id, status);
+  }
+
+  function toggleComplete(task: Task) {
+    if (timers.current.has(task.id)) return;
+
+    const nextStatus: TaskStatus =
+      task.status === "completed" ? "todo" : "completed";
+
+    pendingActions.current.set(task.id, nextStatus);
+
+    setPending((current) => ({
+      ...current,
+      [task.id]: nextStatus,
+    }));
+
+    const handle = window.setTimeout(() => {
+      timers.current.delete(task.id);
+      pendingActions.current.delete(task.id);
+
+      statusCallback.current(task.id, nextStatus);
+
+      setPending((current) => {
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
+    }, ANIMATION_MS);
+
+    timers.current.set(task.id, handle);
+  }
+
+  function resetFilters() {
+    setSmartFilter("all");
+
+    onFiltersChange({
+      search: "",
+      status: "all",
+      project: "all",
+      sort: "newest",
+    });
+
+    setAdvancedFiltersOpen(false);
+  }
+
+  function renderTask(task: Task) {
+    const project = projectFor(task);
+
+    const isPending = Object.prototype.hasOwnProperty.call(pending, task.id);
+
+    const visualStatus = pending[task.id] ?? task.status;
+    const isComplete = visualStatus === "completed";
+    const statusOpen = openStatusId === task.id;
+
+    return (
+      <article
+        key={task.id}
+        className={`fm-tasks-item ${
+          isComplete ? "is-completed" : ""
+        } ${isPending ? "is-transitioning" : ""}`}
+      >
         <button
           type="button"
-          className={`fm-tasks-insight-card ${
-            smartFilter === "today" ? "active" : ""
-          }`}
-          onClick={() => handleQuickFilter("today")}
+          className={`fm-tasks-checkbox ${isComplete ? "is-checked" : ""}`}
+          onClick={() => toggleComplete(task)}
+          disabled={isPending}
+          aria-pressed={isComplete}
+          aria-label={
+            isComplete ? `Reopen ${task.title}` : `Complete ${task.title}`
+          }
+          title={isComplete ? "Reopen task" : "Mark completed"}
         >
-          <span className="fm-tasks-insight-icon">📅</span>
-
-          <span className="fm-tasks-insight-label">Today</span>
-
-          <strong>{insights.today}</strong>
-
-          <span className="fm-tasks-insight-description">Due today</span>
+          <Icon name="check" size={14} />
         </button>
 
-        <button
-          type="button"
-          className={`fm-tasks-insight-card ${
-            smartFilter === "overdue" ? "active" : ""
-          }`}
-          onClick={() => handleQuickFilter("overdue")}
-        >
-          <span className="fm-tasks-insight-icon">⚠️</span>
+        <div className="fm-tasks-info">
+          <button
+            type="button"
+            className={`fm-tasks-title ${isComplete ? "is-done" : ""}`}
+            onClick={() => handleEdit(task)}
+          >
+            {task.title}
+          </button>
 
-          <span className="fm-tasks-insight-label">Overdue</span>
-
-          <strong>{insights.overdue}</strong>
-
-          <span className="fm-tasks-insight-description">Needs attention</span>
-        </button>
-
-        <button
-          type="button"
-          className={`fm-tasks-insight-card ${
-            smartFilter === "upcoming" ? "active" : ""
-          }`}
-          onClick={() => handleQuickFilter("upcoming")}
-        >
-          <span className="fm-tasks-insight-icon">🗓️</span>
-
-          <span className="fm-tasks-insight-label">Next 7 Days</span>
-
-          <strong>{insights.upcoming}</strong>
-
-          <span className="fm-tasks-insight-description">
-            Upcoming deadlines
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className={`fm-tasks-insight-card ${
-            smartFilter === "high-priority" ? "active" : ""
-          }`}
-          onClick={() => handleQuickFilter("high-priority")}
-        >
-          <span className="fm-tasks-insight-icon">🔥</span>
-
-          <span className="fm-tasks-insight-label">High Priority</span>
-
-          <strong>{insights.highPriority}</strong>
-
-          <span className="fm-tasks-insight-description">Important tasks</span>
-        </button>
-      </section>
-
-      {/* TASK FORM */}
-
-      <section className="fm-tasks-panel">
-        <h2>{form.editingId ? "Edit Task" : "Create New Task"}</h2>
-
-        <form className="fm-tasks-form" onSubmit={onSubmit}>
-          <div className="fm-tasks-field fm-tasks-title-field">
-            <label htmlFor="fm-task-title">Task Name</label>
-
-            <input
-              id="fm-task-title"
-              type="text"
-              value={form.title}
-              onChange={(event) =>
-                onFormChange({
-                  title: event.target.value,
-                })
-              }
-              placeholder="What do you need to do?"
-              maxLength={200}
-              required
-            />
-          </div>
-
-          <div className="fm-tasks-field">
-            <label htmlFor="fm-task-priority">Priority</label>
-
-            <select
-              id="fm-task-priority"
-              value={form.priority}
-              onChange={(event) =>
-                onFormChange({
-                  priority: event.target.value as Priority,
-                })
-              }
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </div>
-
-          <div className="fm-tasks-field">
-            <label htmlFor="fm-task-date">Due Date</label>
-
-            <input
-              id="fm-task-date"
-              type="date"
-              value={form.dueDate}
-              onChange={(event) =>
-                onFormChange({
-                  dueDate: event.target.value,
-                })
-              }
-            />
-          </div>
-
-          <div className="fm-tasks-field">
-            <label htmlFor="fm-task-project">Project</label>
-
-            <select
-              id="fm-task-project"
-              value={form.projectId}
-              onChange={(event) =>
-                onFormChange({
-                  projectId: event.target.value,
-                })
-              }
-            >
-              <option value="">No Project</option>
-
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="fm-tasks-form-actions">
-            <button type="submit" className="fm-tasks-primary-button">
-              {form.editingId ? "Save Changes" : "+ Add Task"}
-            </button>
-
-            {form.editingId && (
-              <button
-                type="button"
-                className="fm-tasks-secondary-button"
-                onClick={onCancelEdit}
-              >
-                Cancel
-              </button>
+          <div className="fm-tasks-meta">
+            {project && (
+              <span className="fm-tasks-project">
+                <Icon name="list" size={12} />
+                {project.name}
+              </span>
             )}
+
+            {task.dueDate && (
+              <span className={`fm-tasks-date ${deadlineClass(task)}`}>
+                <Icon name="calendar" size={12} />
+                {deadlineLabel(task)}
+              </span>
+            )}
+
+            <span className={`fm-tasks-priority is-${task.priority}`}>
+              <span className="fm-tasks-priority-dot" aria-hidden="true" />
+              {priorityLabel(task.priority)}
+            </span>
           </div>
-        </form>
-      </section>
-
-      {/* TASK LIST */}
-
-      <section className="fm-tasks-panel">
-        <div className="fm-tasks-section-heading">
-          <h2>Your Tasks ({filteredTasks.length})</h2>
-
-          <span className="fm-tasks-muted">
-            {completedCount} of {tasks.length} completed
-          </span>
         </div>
 
-        {/* QUICK FILTERS */}
+        <div className="fm-tasks-item-actions">
+          <div className="fm-tasks-status-control">
+            <button
+              type="button"
+              className={`fm-tasks-status-button is-${visualStatus}`}
+              onClick={() => setOpenStatusId(statusOpen ? null : task.id)}
+              aria-expanded={statusOpen}
+              disabled={isPending}
+              aria-label={`Change status for ${task.title}`}
+              title="Change task status"
+            >
+              <span className="fm-tasks-status-dot" />
+              {statusLabel(visualStatus)}
+              <Icon name="chevron" size={14} />
+            </button>
+
+            {statusOpen && (
+              <div className="fm-tasks-status-menu">
+                <span className="fm-tasks-menu-label">SET STATUS</span>
+
+                {STATUS_OPTIONS.map((option) => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    className={`fm-tasks-status-option ${
+                      visualStatus === option.value ? "is-selected" : ""
+                    }`}
+                    onClick={() => changeStatus(task, option.value)}
+                  >
+                    <span
+                      className={`fm-tasks-status-dot is-${option.value}`}
+                    />
+                    {option.label}
+
+                    {visualStatus === option.value && (
+                      <Icon name="check" size={14} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="fm-tasks-icon-button"
+            title="Edit task"
+            aria-label={`Edit ${task.title}`}
+            onClick={() => handleEdit(task)}
+          >
+            <Icon name="edit" size={16} />
+          </button>
+
+          <button
+            type="button"
+            className="fm-tasks-icon-button fm-tasks-delete-button"
+            title="Delete task"
+            aria-label={`Delete ${task.title}`}
+            onClick={() => onDelete(task)}
+          >
+            <Icon name="trash" size={16} />
+          </button>
+        </div>
+      </article>
+    );
+  }
+
+  function renderGroup(title: string, items: Task[], description: string) {
+    if (items.length === 0) return null;
+
+    return (
+      <div className="fm-tasks-group">
+        <div className="fm-tasks-group-header">
+          <div className="fm-tasks-group-name">
+            <h3>{title}</h3>
+            <span>{items.length}</span>
+          </div>
+          <p>{description}</p>
+        </div>
+
+        <div className="fm-tasks-list">{items.map(renderTask)}</div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="fm-tasks">
+      <header className="fm-tasks-header">
+        <div>
+          <p className="fm-tasks-subtitle">YOUR WORKSPACE</p>
+
+          <h1>
+            My Tasks<span>.</span>
+          </h1>
+
+          <p className="fm-tasks-description">
+            A clearer view of everything you need to get done.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="fm-tasks-new-button"
+          onClick={openCreateForm}
+        >
+          <Icon name="plus" size={17} />
+          New task
+        </button>
+      </header>
+
+      <div className="fm-tasks-overview" aria-label="Task overview">
+        <div className="fm-tasks-overview-item">
+          <strong>{activeCount}</strong>
+          <span>Open tasks</span>
+        </div>
+
+        <div className="fm-tasks-overview-item">
+          <strong>{insights.today}</strong>
+          <span>Due today</span>
+        </div>
+
+        <div className="fm-tasks-overview-item">
+          <strong>{insights.overdue}</strong>
+          <span>Overdue</span>
+        </div>
+
+        <div className="fm-tasks-overview-item">
+          <strong>{completedCount}</strong>
+          <span>Completed</span>
+        </div>
+      </div>
+
+      {formOpen && (
+        <section
+          ref={formRef}
+          className="fm-tasks-form-panel"
+          aria-label={editing ? "Edit task" : "Create new task"}
+        >
+          <div className="fm-tasks-form-heading">
+            <div>
+              <span className="fm-tasks-kicker">
+                {editing ? "UPDATE TASK" : "QUICK ADD"}
+              </span>
+              <h2>{editing ? "Edit your task" : "Create a task"}</h2>
+              <p>
+                {editing
+                  ? "Update the details below."
+                  : "Add the details that matter."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="fm-tasks-icon-button"
+              onClick={closeForm}
+              aria-label="Close task form"
+              title="Close"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+
+          <form className="fm-tasks-form" onSubmit={handleFormSubmit}>
+            <div className="fm-tasks-field fm-tasks-title-field">
+              <label htmlFor="fm-task-title">Task name</label>
+
+              <input
+                ref={titleRef}
+                id="fm-task-title"
+                type="text"
+                value={form.title}
+                onChange={(event) =>
+                  onFormChange({ title: event.target.value })
+                }
+                placeholder="What needs to get done?"
+                maxLength={200}
+                required
+              />
+            </div>
+
+            <div className="fm-tasks-form-grid">
+              <div className="fm-tasks-field">
+                <label htmlFor="fm-task-priority">Priority</label>
+
+                <select
+                  id="fm-task-priority"
+                  value={form.priority}
+                  onChange={(event) =>
+                    onFormChange({
+                      priority: event.target.value as Priority,
+                    })
+                  }
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+
+              <div className="fm-tasks-field">
+                <label htmlFor="fm-task-date">Due date</label>
+
+                <input
+                  id="fm-task-date"
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(event) =>
+                    onFormChange({ dueDate: event.target.value })
+                  }
+                />
+              </div>
+
+              <div className="fm-tasks-field">
+                <label htmlFor="fm-task-project">Project</label>
+
+                <select
+                  id="fm-task-project"
+                  value={form.projectId}
+                  onChange={(event) =>
+                    onFormChange({ projectId: event.target.value })
+                  }
+                >
+                  <option value="">No project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="fm-tasks-form-footer">
+              <span>
+                {editing
+                  ? "Changes will update this task."
+                  : "You can edit this later."}
+              </span>
+
+              <div className="fm-tasks-form-actions">
+                <button
+                  type="button"
+                  className="fm-tasks-secondary-button"
+                  onClick={closeForm}
+                >
+                  Cancel
+                </button>
+
+                <button type="submit" className="fm-tasks-primary-button">
+                  {editing ? "Save changes" : "Create task"}
+                  <Icon name={editing ? "check" : "arrow"} size={16} />
+                </button>
+              </div>
+            </div>
+          </form>
+        </section>
+      )}
+
+      <section className="fm-tasks-workspace" aria-label="Your tasks">
+        <div className="fm-tasks-section-heading">
+          <div>
+            <span className="fm-tasks-kicker">STAY ON TRACK</span>
+            <h2>Your tasks</h2>
+            <p>
+              {filteredTasks.length} shown · {completedCount} of {tasks.length}{" "}
+              completed
+            </p>
+          </div>
+        </div>
 
         <div
           className="fm-tasks-quick-filters"
@@ -338,191 +743,153 @@ function Tasks({
               aria-pressed={smartFilter === filter.id}
               onClick={() => handleQuickFilter(filter.id)}
             >
-              <span>{filter.icon}</span>
               {filter.label}
+              <span>{countForFilter(filter.id)}</span>
             </button>
           ))}
         </div>
 
-        {/* ORIGINAL FILTERS */}
-
         <div className="fm-tasks-toolbar">
-          <input
-            type="search"
-            aria-label="Search tasks"
-            placeholder="Search tasks..."
-            value={filters.search}
-            onChange={(event) =>
-              onFiltersChange({
-                search: event.target.value,
-              })
-            }
-          />
+          <div className="fm-tasks-search-wrap">
+            <Icon name="search" size={18} />
+            <input
+              type="search"
+              aria-label="Search tasks"
+              placeholder="Search your tasks..."
+              value={filters.search}
+              onChange={(event) =>
+                onFiltersChange({ search: event.target.value })
+              }
+            />
+          </div>
 
-          <select
-            aria-label="Filter by status"
-            value={filters.status}
-            onChange={(event) =>
-              onFiltersChange({
-                status: event.target.value,
-              })
-            }
+          <button
+            type="button"
+            className={`fm-tasks-filter-button ${
+              advancedFiltersOpen || hasAdvancedFilters ? "active" : ""
+            }`}
+            onClick={() => setAdvancedFiltersOpen((value) => !value)}
+            aria-expanded={advancedFiltersOpen}
           >
-            <option value="all">All Statuses</option>
-            <option value="todo">To Do</option>
-            <option value="in-progress">In Progress</option>
-            <option value="completed">Completed</option>
-          </select>
-
-          <select
-            aria-label="Filter by project"
-            value={filters.project}
-            onChange={(event) =>
-              onFiltersChange({
-                project: event.target.value,
-              })
-            }
-          >
-            <option value="all">All Projects</option>
-            <option value="none">No Project</option>
-
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Sort tasks"
-            value={filters.sort}
-            onChange={(event) =>
-              onFiltersChange({
-                sort: event.target.value as TaskSort,
-              })
-            }
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="priority">Highest Priority</option>
-            <option value="due-date">Nearest Deadline</option>
-          </select>
+            <Icon name="filter" size={17} />
+            Filters
+            {hasAdvancedFilters && (
+              <span className="fm-tasks-active-indicator" />
+            )}
+          </button>
         </div>
+
+        {advancedFiltersOpen && (
+          <div className="fm-tasks-advanced-filters">
+            <div className="fm-tasks-filter-field">
+              <label htmlFor="fm-filter-status">Status</label>
+              <select
+                id="fm-filter-status"
+                value={filters.status}
+                onChange={(event) =>
+                  onFiltersChange({
+                    status: event.target.value,
+                  })
+                }
+              >
+                <option value="all">All statuses</option>
+                <option value="todo">To do</option>
+                <option value="in-progress">In progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+
+            <div className="fm-tasks-filter-field">
+              <label htmlFor="fm-filter-project">Project</label>
+              <select
+                id="fm-filter-project"
+                value={filters.project}
+                onChange={(event) =>
+                  onFiltersChange({
+                    project: event.target.value,
+                  })
+                }
+              >
+                <option value="all">All projects</option>
+                <option value="none">No project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="fm-tasks-filter-field">
+              <label htmlFor="fm-filter-sort">Sort by</label>
+              <select
+                id="fm-filter-sort"
+                value={filters.sort}
+                onChange={(event) =>
+                  onFiltersChange({
+                    sort: event.target.value as TaskSort,
+                  })
+                }
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="priority">Highest priority</option>
+                <option value="due-date">Nearest deadline</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="fm-tasks-reset-filters"
+              onClick={resetFilters}
+            >
+              Reset filters
+            </button>
+          </div>
+        )}
 
         {filteredTasks.length === 0 ? (
           <div className="fm-tasks-empty">
-            <div>📋</div>
-
-            <h3>{tasks.length === 0 ? "No tasks yet" : "No matching tasks"}</h3>
-
+            <div className="fm-tasks-empty-icon">
+              <Icon name="list" size={24} />
+            </div>
+            <h3>
+              {tasks.length === 0 ? "A fresh start." : "No matching tasks."}
+            </h3>
             <p>
               {tasks.length === 0
-                ? "Create your first task above."
-                : "Change your search or filters."}
+                ? "Create your first task and start making progress."
+                : "Try adjusting your search or filters."}
             </p>
-
-            {smartFilter !== "all" && (
-              <button
-                type="button"
-                className="fm-tasks-secondary-button"
-                onClick={() => handleQuickFilter("all")}
-              >
-                Show All Tasks
-              </button>
+            <button
+              type="button"
+              className={
+                tasks.length === 0
+                  ? "fm-tasks-primary-button"
+                  : "fm-tasks-secondary-button"
+              }
+              onClick={tasks.length === 0 ? openCreateForm : resetFilters}
+            >
+              {tasks.length === 0 ? "Create a task" : "Clear filters"}
+            </button>
+          </div>
+        ) : showGroups ? (
+          <div className="fm-tasks-groups">
+            {renderGroup(
+              "In progress",
+              groupedTasks.inProgress,
+              "What you're working on",
             )}
+            {renderGroup("To do", groupedTasks.todo, "Ready when you are")}
+            {renderGroup("Completed", groupedTasks.completed, "Finished tasks")}
           </div>
         ) : (
-          <div className="fm-tasks-list">
-            {filteredTasks.map((task) => {
-              const project = getProject(task);
-
-              return (
-                <div className="fm-tasks-item" key={task.id}>
-                  <div className="fm-tasks-info">
-                    <h3
-                      className={
-                        task.status === "completed" ? "fm-tasks-completed" : ""
-                      }
-                    >
-                      {task.title}
-                    </h3>
-
-                    <div className="fm-tasks-meta">
-                      <span
-                        className={
-                          `fm-tasks-priority ` +
-                          `fm-tasks-priority-${task.priority}`
-                        }
-                      >
-                        {task.priority} priority
-                      </span>
-
-                      {task.dueDate && (
-                        <span
-                          className={`fm-tasks-deadline ` + deadlineClass(task)}
-                        >
-                          📅 {deadlineLabel(task)}
-                        </span>
-                      )}
-
-                      {project && (
-                        <span className="fm-tasks-project-tag">
-                          <span
-                            className="fm-tasks-project-dot"
-                            style={{
-                              backgroundColor: project.color,
-                            }}
-                          />
-
-                          {project.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="fm-tasks-actions">
-                    <select
-                      aria-label={`Status for ${task.title}`}
-                      value={task.status}
-                      onChange={(event) =>
-                        onStatusChange(
-                          task.id,
-                          event.target.value as TaskStatus,
-                        )
-                      }
-                    >
-                      <option value="todo">To Do</option>
-                      <option value="in-progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                    </select>
-
-                    <button
-                      type="button"
-                      className="fm-tasks-icon-button fm-tasks-edit-button"
-                      title="Edit task"
-                      aria-label={`Edit ${task.title}`}
-                      onClick={() => onEdit(task)}
-                    >
-                      ✏️
-                    </button>
-
-                    <button
-                      type="button"
-                      className="fm-tasks-icon-button fm-tasks-delete-button"
-                      title="Delete task"
-                      aria-label={`Delete ${task.title}`}
-                      onClick={() => onDelete(task)}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="fm-tasks-list fm-tasks-list-flat">
+            {filteredTasks.map(renderTask)}
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }
 
