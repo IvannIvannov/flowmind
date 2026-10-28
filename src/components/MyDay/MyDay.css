@@ -1,0 +1,479 @@
+/* FLOWMIND - MY DAY */
+
+.fm-day {
+    width: 100%;
+    min-width: 0;
+    padding-bottom: 28px;
+}
+
+/* HEADER */
+
+.fm-day-header {
+    margin-bottom: 32px;
+}
+
+.fm-day-eyebrow {
+    margin: 0 0 12px;
+    color: #a78bfa;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+.fm-day-header h1 {
+    margin: 0 0 9px;
+    color: #ffffff;
+    font-size: 34px;
+}
+
+.fm-day-date-label {
+    margin: 0 0 12px;
+    color: #d4c7ff;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.fm-day-description {
+    margin: 0;
+    color: #989eae;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+/* OVERVIEW */
+
+.fm-day-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.fm-day-progress-card,
+.fm-day-stat-card {
+    min-width: 0;
+    padding: 24px;
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 17px;
+}
+
+.fm-day-progress-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.fm-day-card-label {
+    margin: 0 0 13px;
+    color: #a78bfa;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+}
+
+.fm-day-progress-top h2 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.fm-day-progress-top h2 span {
+    color: #818699;
+    font-size: 22px;
+}
+
+.fm-day-progress-percent {
+    padding: 8px 12px;
+    background: #302a45;
+    border-radius: 9px;
+    color: #c4b5fd;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.fm-day-progress-track {
+    width: 100%;
+    height: 9px;
+    margin-top: 24px;
+    overflow: hidden;
+    background: #353746;
+    border-radius: 99px;
+}
+
+.fm-day-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg,
+            #8b5cf6,
+            #a78bfa);
+    border-radius: 99px;
+    transition: width 0.25s ease;
+}
+
+.fm-day-progress-description {
+    margin: 12px 0 0;
+    color: #9298aa;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* STAT CARDS */
+
+.fm-day-stat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.fm-day-stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 43px;
+    height: 43px;
+    background: #302a45;
+    border-radius: 12px;
+    font-size: 21px;
+}
+
+.fm-day-stat-card:last-child .fm-day-stat-icon {
+    background: #4b252e;
+}
+
+.fm-day-stat-label {
+    color: #a3a8b8;
+    font-size: 13px;
+}
+
+.fm-day-stat-card strong {
+    color: #ffffff;
+    font-size: 34px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* PANELS */
+
+.fm-day-panel {
+    min-width: 0;
+    margin-bottom: 22px;
+    padding: 24px;
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 17px;
+}
+
+.fm-day-focus-panel {
+    border-color: #51416d;
+    background: linear-gradient(135deg,
+            #242036,
+            #1b1d28 65%);
+}
+
+.fm-day-panel-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 17px;
+}
+
+.fm-day-panel-heading h2 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 19px;
+}
+
+.fm-day-section-eyebrow {
+    margin: 0 0 10px;
+    color: #a78bfa;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}
+
+.fm-day-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 35px;
+    padding: 7px 11px;
+    background: #302a45;
+    border-radius: 9px;
+    color: #c4b5fd;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.fm-day-panel-description {
+    margin: -4px 0 20px;
+    color: #989eae;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.fm-day-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+/* TASK LIST */
+
+.fm-day-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.fm-day-task {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    padding: 16px;
+    background: #242633;
+    border: 1px solid #343747;
+    border-radius: 12px;
+}
+
+.fm-day-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 25px;
+    flex-shrink: 0;
+    border: 2px solid #777e91;
+    border-radius: 50%;
+    background: transparent;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fm-day-check:hover {
+    border-color: #a78bfa;
+    background: #352b55;
+}
+
+.fm-day-check.completed {
+    border-color: #34d399;
+    background: #15805d;
+}
+
+.fm-day-task-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fm-day-task-info h3 {
+    margin: 0 0 10px;
+    color: #f8fafc;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.fm-day-task-info h3.completed {
+    color: #818699;
+    text-decoration: line-through;
+}
+
+.fm-day-task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+}
+
+.fm-day-priority,
+.fm-day-project,
+.fm-day-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.fm-day-priority {
+    text-transform: capitalize;
+}
+
+.fm-day-priority.high {
+    background: #4b252e;
+    color: #fda4af;
+}
+
+.fm-day-priority.medium {
+    background: #49391d;
+    color: #fcd34d;
+}
+
+.fm-day-priority.low {
+    background: #183b30;
+    color: #6ee7b7;
+}
+
+.fm-day-project {
+    background: #303044;
+    color: #e2d9ff;
+}
+
+.fm-day-project-dot {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 50%;
+}
+
+.fm-day-date {
+    background: #303344;
+    color: #b6bfd5;
+}
+
+.fm-day-edit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 9px;
+    background: #37304e;
+    cursor: pointer;
+}
+
+.fm-day-edit:hover {
+    background: #51416d;
+}
+
+/* EMPTY STATES */
+
+.fm-day-empty {
+    padding: 35px 15px;
+    text-align: center;
+}
+
+.fm-day-empty>span {
+    font-size: 30px;
+}
+
+.fm-day-empty h3 {
+    margin: 13px 0 8px;
+    color: #ffffff;
+    font-size: 15px;
+}
+
+.fm-day-empty p,
+.fm-day-empty-text {
+    color: #989eae;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.fm-day-empty-text {
+    margin: 0;
+    padding: 15px 0;
+}
+
+/* FOOTER */
+
+.fm-day-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 8px 0;
+    color: #989eae;
+    font-size: 13px;
+}
+
+.fm-day-primary-button {
+    padding: 13px 20px;
+    border: none;
+    border-radius: 10px;
+    background: #8b5cf6;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fm-day-primary-button:hover {
+    background: #7c3aed;
+}
+
+/* ACCESSIBILITY */
+
+.fm-day button:focus-visible {
+    outline: 2px solid #c4b5fd;
+    outline-offset: 3px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1350px) {
+    .fm-day-overview {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fm-day-progress-card {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 1050px) {
+    .fm-day-columns {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+}
+
+@media (max-width: 650px) {
+    .fm-day-header h1 {
+        font-size: 27px;
+    }
+
+    .fm-day-panel,
+    .fm-day-progress-card,
+    .fm-day-stat-card {
+        padding: 18px;
+    }
+
+    .fm-day-overview {
+        gap: 10px;
+    }
+
+    .fm-day-task {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .fm-day-task-info h3 {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 420px) {
+    .fm-day-overview {
+        grid-template-columns: 1fr;
+    }
+
+    .fm-day-progress-card {
+        grid-column: auto;
+    }
+}

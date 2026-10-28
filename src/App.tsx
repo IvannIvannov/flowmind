@@ -6,6 +6,7 @@ import type { AssistantTaskDraft } from "./AI/AIAssistant";
 
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
+import MyDay from "./components/MyDay/MyDay";
 import Projects from "./components/Projects/Projects";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Tasks from "./components/Tasks/Tasks";
@@ -110,7 +111,7 @@ function App() {
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  // PERSISTENCE
+  // LOCAL PERSISTENCE
 
   useEffect(() => {
     saveTasks(tasks);
@@ -273,7 +274,7 @@ function App() {
     }
   }
 
-  // TASK CREATION FROM AI ASSISTANT
+  // AI TASK CREATION
 
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
     const name = draft.title.trim();
@@ -309,7 +310,9 @@ function App() {
   }
 
   function resetProjectForm() {
-    setProjectForm({ ...INITIAL_PROJECT_FORM });
+    setProjectForm({
+      ...INITIAL_PROJECT_FORM,
+    });
   }
 
   // PROJECT MANAGEMENT
@@ -332,8 +335,6 @@ function App() {
     const candidateNames = [name, ...aliases];
 
     const candidateKeys = new Set(candidateNames.map(normalizeProjectName));
-
-    // Prevent duplicate project names and aliases.
 
     const conflictingProject = projects.find((project) => {
       if (project.id === projectForm.editingId) {
@@ -494,6 +495,16 @@ function App() {
             projects={projects}
             onOpenTasks={() => setPage("tasks")}
             onOpenProjects={() => setPage("projects")}
+          />
+        )}
+
+        {page === "my-day" && (
+          <MyDay
+            tasks={tasks}
+            projects={projects}
+            onStatusChange={changeTaskStatus}
+            onEditTask={startEditTask}
+            onOpenTasks={() => setPage("tasks")}
           />
         )}
 

@@ -1,4 +1,5 @@
 import type { Page } from "../../types";
+
 import "./Sidebar.css";
 
 interface SidebarProps {
@@ -6,79 +7,93 @@ interface SidebarProps {
   onNavigate: (page: Page) => void;
 }
 
-const menuItems: {
-  page: Page;
-  icon: string;
+interface NavigationItem {
+  id: Page;
   label: string;
-}[] = [
+  icon: string;
+}
+
+const NAVIGATION: NavigationItem[] = [
   {
-    page: "dashboard",
-    icon: "🏠",
+    id: "dashboard",
     label: "Dashboard",
+    icon: "📊",
   },
   {
-    page: "tasks",
-    icon: "✅",
+    id: "my-day",
+    label: "My Day",
+    icon: "☀️",
+  },
+  {
+    id: "tasks",
     label: "My Tasks",
+    icon: "✅",
   },
   {
-    page: "projects",
-    icon: "📁",
+    id: "projects",
     label: "Projects",
+    icon: "📁",
   },
   {
-    page: "calendar",
-    icon: "📅",
+    id: "calendar",
     label: "Calendar",
+    icon: "📅",
   },
   {
-    page: "ai",
-    icon: "🧠",
+    id: "ai",
     label: "AI Assistant",
+    icon: "✨",
   },
 ];
 
 function Sidebar({ currentPage, onNavigate }: SidebarProps) {
   return (
-    <aside className="fm-sidebar">
+    <aside className="sidebar fm-sidebar">
       <div className="fm-sidebar-brand">
-        <span className="fm-sidebar-symbol">✦</span>
+        <div className="fm-sidebar-logo">✦</div>
 
-        <h2>FlowMind</h2>
+        <div className="fm-sidebar-brand-text">
+          <span className="fm-sidebar-name">FlowMind</span>
+
+          <span className="fm-sidebar-tagline">YOUR PERSONAL WORKSPACE</span>
+        </div>
       </div>
 
-      <nav className="fm-sidebar-navigation" aria-label="Main navigation">
-        {menuItems.map((item) => (
-          <button
-            type="button"
-            key={item.page}
-            className={`fm-sidebar-item ${
-              currentPage === item.page ? "active" : ""
-            }`}
-            aria-current={currentPage === item.page ? "page" : undefined}
-            onClick={() => onNavigate(item.page)}
-          >
-            <span className="fm-sidebar-icon">{item.icon}</span>
+      <div className="fm-sidebar-section-label">WORKSPACE</div>
 
-            <span>{item.label}</span>
-          </button>
-        ))}
+      <nav className="fm-sidebar-nav" aria-label="Main navigation">
+        {NAVIGATION.map((item) => {
+          const isActive = currentPage === item.id;
 
-        <div className="fm-sidebar-divider" />
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`fm-sidebar-link ${isActive ? "active" : ""}`}
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => onNavigate(item.id)}
+            >
+              <span className="fm-sidebar-link-icon" aria-hidden="true">
+                {item.icon}
+              </span>
 
-        <button type="button" className="fm-sidebar-item" disabled>
-          <span className="fm-sidebar-icon">⚙️</span>
+              <span className="fm-sidebar-link-label">{item.label}</span>
 
-          <span>Settings</span>
-
-          <span className="fm-sidebar-soon">Soon</span>
-        </button>
+              {isActive && (
+                <span className="fm-sidebar-active-dot" aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="fm-sidebar-footer">
-        <span className="fm-sidebar-status-dot" />
+      <div className="fm-sidebar-bottom">
+        <div className="fm-sidebar-local-status">
+          <span className="fm-sidebar-status-dot" />
+          <span>Local workspace</span>
+        </div>
 
-        <span>FlowMind v0.7.0</span>
+        <p className="fm-sidebar-version">FlowMind v0.11.0</p>
       </div>
     </aside>
   );
