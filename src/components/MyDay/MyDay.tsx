@@ -6,6 +6,8 @@ import { createDayPlan, localDateKey } from "../../utils/dayPlanner";
 
 import { formatDate } from "../../utils/dates";
 
+import FocusTimer from "./FocusTimer";
+
 import "./MyDay.css";
 
 interface MyDayProps {
@@ -64,8 +66,9 @@ function MyDay({
   onEditTask,
   onOpenTasks,
 }: MyDayProps) {
-  const today = new Date();
-  const todayKey = localDateKey(today);
+  const todayKey = localDateKey(new Date());
+
+  const today = useMemo(() => new Date(), [todayKey]);
 
   const [focusState, setFocusState] = useState<{
     dayKey: string;
@@ -88,12 +91,12 @@ function MyDay({
 
   const automaticPlan = useMemo(
     () => createDayPlan(tasks, today, null),
-    [tasks, todayKey],
+    [tasks, today],
   );
 
   const plan = useMemo(
     () => createDayPlan(tasks, today, selectedFocusIds),
-    [tasks, todayKey, selectedFocusIds],
+    [tasks, today, selectedFocusIds],
   );
 
   const activeTasks = useMemo(
@@ -255,6 +258,8 @@ function MyDay({
         <p className="fm-day-description">Focus on what matters most today.</p>
       </header>
 
+      {/* DAILY OVERVIEW */}
+
       <section className="fm-day-overview">
         <div className="fm-day-progress-card">
           <div className="fm-day-progress-top">
@@ -310,7 +315,7 @@ function MyDay({
         </div>
       </section>
 
-      {/* FOCUS TASKS */}
+      {/* FOCUS TASK SELECTION */}
 
       <section className="fm-day-panel fm-day-focus-panel">
         <div className="fm-day-panel-heading">
@@ -450,6 +455,10 @@ function MyDay({
         )}
       </section>
 
+      {/* NEW: FOCUS TIMER */}
+
+      <FocusTimer tasks={plan.focus} />
+
       {/* TODAY AND OVERDUE */}
 
       <div className="fm-day-columns">
@@ -463,7 +472,9 @@ function MyDay({
           {plan.today.length === 0 ? (
             <div className="fm-day-empty">
               <span>☀️</span>
+
               <h3>No tasks due today</h3>
+
               <p>Your schedule is clear for today.</p>
             </div>
           ) : (
@@ -483,7 +494,9 @@ function MyDay({
           {plan.overdue.length === 0 ? (
             <div className="fm-day-empty">
               <span>✅</span>
+
               <h3>Nothing overdue</h3>
+
               <p>You're keeping up with your deadlines.</p>
             </div>
           ) : (
