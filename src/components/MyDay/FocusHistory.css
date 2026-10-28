@@ -1,0 +1,262 @@
+/* FLOWMIND - FOCUS HISTORY */
+
+.fm-focus-history {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 26px;
+    margin-bottom: 24px;
+    border: 1px solid #2d3040;
+    border-radius: 18px;
+    background: #1b1d28;
+    color: #f8fafc;
+}
+
+/* HEADER */
+
+.fm-focus-history-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.fm-focus-history-eyebrow {
+    margin: 0 0 10px;
+    color: #a78bfa;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+}
+
+.fm-focus-history-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: #ffffff;
+}
+
+.fm-focus-history-total {
+    padding: 8px 12px;
+    border-radius: 9px;
+    background: #302a45;
+    color: #d4c7ff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.fm-focus-history-description {
+    margin: 14px 0 24px;
+    color: #a3a8b8;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+/* STATISTICS */
+
+.fm-focus-history-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 30px;
+}
+
+.fm-focus-history-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 11px;
+    min-width: 0;
+    padding: 19px;
+    border: 1px solid #343747;
+    border-radius: 13px;
+    background: #242633;
+}
+
+.fm-focus-history-stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: #302a45;
+    font-size: 19px;
+}
+
+.fm-focus-history-stat:nth-child(2) .fm-focus-history-stat-icon {
+    background: #24364a;
+}
+
+.fm-focus-history-stat:nth-child(3) .fm-focus-history-stat-icon {
+    background: #183b30;
+}
+
+.fm-focus-history-stat-label {
+    color: #a3a8b8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.fm-focus-history-stat strong {
+    color: #ffffff;
+    font-size: 27px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+/* SECTION HEADING */
+
+.fm-focus-history-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.fm-focus-history-section-heading h3 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+.fm-focus-history-section-heading>span {
+    color: #8d93a5;
+    font-size: 12px;
+}
+
+/* SESSION LIST */
+
+.fm-focus-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.fm-focus-history-item {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid #343747;
+    border-radius: 11px;
+    background: #242633;
+}
+
+.fm-focus-history-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 29px;
+    height: 29px;
+    flex-shrink: 0;
+    border: 1px solid #28694f;
+    border-radius: 50%;
+    background: #183b30;
+    color: #6ee7b7;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.fm-focus-history-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fm-focus-history-item-info h4 {
+    margin: 0 0 6px;
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.fm-focus-history-item-info p {
+    margin: 0;
+    color: #9298aa;
+    font-size: 11px;
+}
+
+.fm-focus-history-duration {
+    flex-shrink: 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: #302a45;
+    color: #d4c7ff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* EMPTY STATE */
+
+.fm-focus-history-empty {
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.fm-focus-history-empty>span {
+    font-size: 32px;
+}
+
+.fm-focus-history-empty h3 {
+    margin: 12px 0 7px;
+    color: #ffffff;
+    font-size: 15px;
+}
+
+.fm-focus-history-empty p {
+    max-width: 350px;
+    margin: 0 auto;
+    color: #989eae;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+/* NOTE */
+
+.fm-focus-history-note {
+    margin: 20px 0 0;
+    color: #858b9d;
+    font-size: 11px;
+    line-height: 1.7;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 750px) {
+    .fm-focus-history {
+        padding: 19px;
+    }
+
+    .fm-focus-history-stats {
+        gap: 9px;
+    }
+
+    .fm-focus-history-stat {
+        padding: 13px;
+    }
+
+    .fm-focus-history-stat strong {
+        font-size: 21px;
+    }
+}
+
+@media (max-width: 480px) {
+    .fm-focus-history-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .fm-focus-history-stat {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .fm-focus-history-stat strong {
+        margin-left: auto;
+    }
+}
