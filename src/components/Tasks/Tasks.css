@@ -31,6 +31,90 @@
     line-height: 1.6;
 }
 
+/* SMART TASK INSIGHTS */
+
+.fm-tasks-insights {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 26px;
+}
+
+.fm-tasks-insight-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    padding: 22px;
+    background: #1b1d28;
+    border: 1px solid #2d3040;
+    border-radius: 16px;
+    color: #f8fafc;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        transform 0.2s ease;
+}
+
+.fm-tasks-insight-card:hover {
+    background: #242633;
+    border-color: #65548e;
+    transform: translateY(-2px);
+}
+
+.fm-tasks-insight-card.active {
+    background: #29243e;
+    border-color: #8b5cf6;
+    box-shadow: inset 0 0 0 1px #8b5cf6;
+}
+
+.fm-tasks-insight-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background: #302a45;
+    border-radius: 11px;
+    font-size: 19px;
+}
+
+.fm-tasks-insight-label {
+    color: #c5c8d5;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.fm-tasks-insight-card strong {
+    color: #ffffff;
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.fm-tasks-insight-description {
+    color: #8d93a5;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.fm-tasks-insight-card:nth-child(2) .fm-tasks-insight-icon {
+    background: #4b252e;
+}
+
+.fm-tasks-insight-card:nth-child(3) .fm-tasks-insight-icon {
+    background: #24364a;
+}
+
+.fm-tasks-insight-card:nth-child(4) .fm-tasks-insight-icon {
+    background: #49391d;
+}
+
 /* PANELS */
 
 .fm-tasks-panel {
@@ -156,7 +240,52 @@
     font-size: 13px;
 }
 
-/* FILTERS */
+/* QUICK FILTERS */
+
+.fm-tasks-quick-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-bottom: 20px;
+}
+
+.fm-tasks-quick-filter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 15px;
+    background: #242633;
+    border: 1px solid #383b4d;
+    border-radius: 10px;
+    color: #bfc3d1;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background-color 0.2s ease,
+        border-color 0.2s ease,
+        color 0.2s ease;
+}
+
+.fm-tasks-quick-filter:hover {
+    background: #343047;
+    border-color: #65548e;
+    color: #ffffff;
+}
+
+.fm-tasks-quick-filter.active {
+    background: #352b55;
+    border-color: #8b5cf6;
+    color: #e6dbff;
+}
+
+.fm-tasks-quick-filter span {
+    font-size: 14px;
+}
+
+/* ORIGINAL FILTERS */
 
 .fm-tasks-toolbar {
     display: flex;
@@ -347,6 +476,10 @@
     font-size: 13px;
 }
 
+.fm-tasks-empty .fm-tasks-secondary-button {
+    margin-top: 12px;
+}
+
 /* FOCUS */
 
 .fm-tasks button:focus-visible,
@@ -357,6 +490,12 @@
 }
 
 /* RESPONSIVE */
+
+@media (max-width: 1350px) {
+    .fm-tasks-insights {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
 
 @media (max-width: 1200px) {
     .fm-tasks-item {
@@ -378,7 +517,38 @@
         padding: 18px;
     }
 
+    .fm-tasks-insights {
+        gap: 10px;
+    }
+
+    .fm-tasks-insight-card {
+        padding: 16px;
+        gap: 8px;
+    }
+
+    .fm-tasks-insight-card strong {
+        font-size: 28px;
+    }
+
+    .fm-tasks-insight-label {
+        font-size: 12px;
+    }
+
+    .fm-tasks-insight-description {
+        font-size: 11px;
+    }
+
     .fm-tasks-actions {
         flex-wrap: wrap;
+    }
+
+    .fm-tasks-quick-filter {
+        padding: 9px 12px;
+    }
+}
+
+@media (max-width: 420px) {
+    .fm-tasks-insights {
+        grid-template-columns: 1fr;
     }
 }

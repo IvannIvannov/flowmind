@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
 import type {
@@ -11,6 +12,13 @@ import type {
 } from "../../types";
 
 import { formatDate, getTodayKey, isOverdue, isToday } from "../../utils/dates";
+
+import {
+  getTaskInsights,
+  matchesSmartTaskFilter,
+} from "../../utils/taskInsights";
+
+import type { SmartTaskFilter } from "../../utils/taskInsights";
 
 import "./Tasks.css";
 
@@ -29,6 +37,22 @@ interface TasksProps {
   onStatusChange: (id: string, status: TaskStatus) => void;
 }
 
+const QUICK_FILTERS: {
+  id: SmartTaskFilter;
+  label: string;
+  icon: string;
+}[] = [
+  { id: "all", label: "All Tasks", icon: "📋" },
+  { id: "today", label: "Today", icon: "📅" },
+  { id: "overdue", label: "Overdue", icon: "⚠️" },
+  { id: "upcoming", label: "Next 7 Days", icon: "🗓️" },
+  {
+    id: "high-priority",
+    label: "High Priority",
+    icon: "🔥",
+  },
+];
+
 function Tasks({
   tasks,
   visibleTasks,
@@ -43,7 +67,17 @@ function Tasks({
   onDelete,
   onStatusChange,
 }: TasksProps) {
+  const [smartFilter, setSmartFilter] = useState<SmartTaskFilter>("all");
+
   const today = getTodayKey();
+
+  const insights = useMemo(() => getTaskInsights(tasks), [tasks]);
+
+  const filteredTasks = useMemo(
+    () =>
+      visibleTasks.filter((task) => matchesSmartTaskFilter(task, smartFilter)),
+    [visibleTasks, smartFilter],
+  );
 
   const completedCount = tasks.filter(
     (task) => task.status === "completed",
@@ -54,7 +88,9 @@ function Tasks({
   }
 
   function deadlineLabel(task: Task): string {
-    if (!task.dueDate) return "";
+    if (!task.dueDate) {
+      return "";
+    }
 
     if (task.status !== "completed") {
       if (isOverdue(task.dueDate)) {
@@ -74,10 +110,25 @@ function Tasks({
       return "";
     }
 
-    if (isOverdue(task.dueDate)) return "overdue";
-    if (task.dueDate === today) return "today";
+    if (isOverdue(task.dueDate)) {
+      return "overdue";
+    }
+
+    if (task.dueDate === today) {
+      return "today";
+    }
 
     return "upcoming";
+  }
+
+  function handleQuickFilter(filter: SmartTaskFilter) {
+    setSmartFilter(filter);
+
+    // Clear status restrictions that could hide
+    // the active tasks in the selected smart filter.
+    if (filter !== "all" && filters.status === "completed") {
+      onFiltersChange({ status: "all" });
+    }
   }
 
   return (
@@ -91,6 +142,78 @@ function Tasks({
           Manage tasks, projects, priorities and deadlines.
         </p>
       </header>
+
+      {/* SMART TASK INSIGHTS */}
+
+      <section className="fm-tasks-insights" aria-label="Task overview">
+        <button
+          type="button"
+          className={`fm-tasks-insight-card ${
+            smartFilter === "today" ? "active" : ""
+          }`}
+          onClick={() => handleQuickFilter("today")}
+        >
+          <span className="fm-tasks-insight-icon">📅</span>
+
+          <span className="fm-tasks-insight-label">Today</span>
+
+          <strong>{insights.today}</strong>
+
+          <span className="fm-tasks-insight-description">Due today</span>
+        </button>
+
+        <button
+          type="button"
+          className={`fm-tasks-insight-card ${
+            smartFilter === "overdue" ? "active" : ""
+          }`}
+          onClick={() => handleQuickFilter("overdue")}
+        >
+          <span className="fm-tasks-insight-icon">⚠️</span>
+
+          <span className="fm-tasks-insight-label">Overdue</span>
+
+          <strong>{insights.overdue}</strong>
+
+          <span className="fm-tasks-insight-description">Needs attention</span>
+        </button>
+
+        <button
+          type="button"
+          className={`fm-tasks-insight-card ${
+            smartFilter === "upcoming" ? "active" : ""
+          }`}
+          onClick={() => handleQuickFilter("upcoming")}
+        >
+          <span className="fm-tasks-insight-icon">🗓️</span>
+
+          <span className="fm-tasks-insight-label">Next 7 Days</span>
+
+          <strong>{insights.upcoming}</strong>
+
+          <span className="fm-tasks-insight-description">
+            Upcoming deadlines
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`fm-tasks-insight-card ${
+            smartFilter === "high-priority" ? "active" : ""
+          }`}
+          onClick={() => handleQuickFilter("high-priority")}
+        >
+          <span className="fm-tasks-insight-icon">🔥</span>
+
+          <span className="fm-tasks-insight-label">High Priority</span>
+
+          <strong>{insights.highPriority}</strong>
+
+          <span className="fm-tasks-insight-description">Important tasks</span>
+        </button>
+      </section>
+
+      {/* TASK FORM */}
 
       <section className="fm-tasks-panel">
         <h2>{form.editingId ? "Edit Task" : "Create New Task"}</h2>
@@ -187,14 +310,41 @@ function Tasks({
         </form>
       </section>
 
+      {/* TASK LIST */}
+
       <section className="fm-tasks-panel">
         <div className="fm-tasks-section-heading">
-          <h2>Your Tasks ({visibleTasks.length})</h2>
+          <h2>Your Tasks ({filteredTasks.length})</h2>
 
           <span className="fm-tasks-muted">
             {completedCount} of {tasks.length} completed
           </span>
         </div>
+
+        {/* QUICK FILTERS */}
+
+        <div
+          className="fm-tasks-quick-filters"
+          role="group"
+          aria-label="Quick task filters"
+        >
+          {QUICK_FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={`fm-tasks-quick-filter ${
+                smartFilter === filter.id ? "active" : ""
+              }`}
+              aria-pressed={smartFilter === filter.id}
+              onClick={() => handleQuickFilter(filter.id)}
+            >
+              <span>{filter.icon}</span>
+              {filter.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ORIGINAL FILTERS */}
 
         <div className="fm-tasks-toolbar">
           <input
@@ -259,7 +409,7 @@ function Tasks({
           </select>
         </div>
 
-        {visibleTasks.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <div className="fm-tasks-empty">
             <div>📋</div>
 
@@ -270,10 +420,20 @@ function Tasks({
                 ? "Create your first task above."
                 : "Change your search or filters."}
             </p>
+
+            {smartFilter !== "all" && (
+              <button
+                type="button"
+                className="fm-tasks-secondary-button"
+                onClick={() => handleQuickFilter("all")}
+              >
+                Show All Tasks
+              </button>
+            )}
           </div>
         ) : (
           <div className="fm-tasks-list">
-            {visibleTasks.map((task) => {
+            {filteredTasks.map((task) => {
               const project = getProject(task);
 
               return (
