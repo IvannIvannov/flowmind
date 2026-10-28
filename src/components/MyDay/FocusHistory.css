@@ -1,4 +1,4 @@
-/* FLOWMIND - FOCUS HISTORY */
+/* FLOWMIND - FOCUS HISTORY & ANALYTICS */
 
 .fm-focus-history {
     width: 100%;
@@ -32,8 +32,8 @@
 
 .fm-focus-history-header h2 {
     margin: 0;
-    font-size: 20px;
     color: #ffffff;
+    font-size: 20px;
 }
 
 .fm-focus-history-total {
@@ -56,7 +56,8 @@
 
 .fm-focus-history-stats {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns:
+        repeat(3, minmax(0, 1fr));
     gap: 14px;
     margin-bottom: 30px;
 }
@@ -106,7 +107,192 @@
     overflow-wrap: anywhere;
 }
 
-/* SECTION HEADING */
+/* WEEKLY ANALYTICS */
+
+.fm-focus-analytics {
+    margin-bottom: 32px;
+    padding: 22px;
+    border: 1px solid #39394c;
+    border-radius: 15px;
+    background: #20222f;
+}
+
+.fm-focus-analytics-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 24px;
+}
+
+.fm-focus-analytics-heading h3 {
+    margin: 0 0 8px;
+    color: #ffffff;
+    font-size: 18px;
+}
+
+.fm-focus-analytics-range {
+    margin: 0;
+    color: #9298aa;
+    font-size: 12px;
+}
+
+/* WEEK SELECTOR */
+
+.fm-focus-analytics-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 4px;
+    border: 1px solid #383b4d;
+    border-radius: 10px;
+    background: #171923;
+}
+
+.fm-focus-analytics-switch button {
+    padding: 9px 12px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: #a3a8b8;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fm-focus-analytics-switch button:hover {
+    color: #ffffff;
+}
+
+.fm-focus-analytics-switch button.active {
+    background: #473568;
+    color: #e6dbff;
+}
+
+/* WEEK SUMMARY */
+
+.fm-focus-analytics-summary {
+    display: grid;
+    grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 27px;
+}
+
+.fm-focus-analytics-summary>div {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid #39394c;
+    border-radius: 10px;
+    background: #282a39;
+}
+
+.fm-focus-analytics-summary span {
+    color: #a3a8b8;
+    font-size: 11px;
+}
+
+.fm-focus-analytics-summary strong {
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* BAR CHART */
+
+.fm-focus-analytics-chart {
+    display: grid;
+    grid-template-columns:
+        repeat(7, minmax(0, 1fr));
+    align-items: end;
+    gap: 12px;
+    min-height: 242px;
+    padding: 14px 3px 0;
+}
+
+.fm-focus-analytics-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    gap: 9px;
+}
+
+.fm-focus-analytics-value {
+    min-height: 15px;
+    color: #c4b5fd;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.fm-focus-analytics-bar-track {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    height: 145px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #45465b;
+}
+
+.fm-focus-analytics-bar {
+    width: min(100%, 45px);
+    min-height: 0;
+    border-radius: 8px 8px 0 0;
+    background: linear-gradient(180deg,
+            #a78bfa,
+            #7c3aed);
+    transition: height 0.3s ease;
+}
+
+.fm-focus-analytics-bar.today {
+    background: linear-gradient(180deg,
+            #c4b5fd,
+            #8b5cf6);
+    box-shadow: 0 0 18px #8b5cf622;
+}
+
+.fm-focus-analytics-day-name {
+    color: #a3a8b8;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.fm-focus-analytics-day-name.today {
+    color: #c4b5fd;
+}
+
+.fm-focus-analytics-day-date {
+    color: #777f92;
+    font-size: 10px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.fm-focus-analytics-empty {
+    margin: 20px 0 0;
+    color: #989eae;
+    font-size: 12px;
+    text-align: center;
+}
+
+.fm-focus-analytics-footnote {
+    margin: 24px 0 0;
+    color: #858b9d;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+/* RECENT SESSIONS */
 
 .fm-focus-history-section-heading {
     display: flex;
@@ -127,8 +313,6 @@
     color: #8d93a5;
     font-size: 12px;
 }
-
-/* SESSION LIST */
 
 .fm-focus-history-list {
     display: flex;
@@ -217,13 +401,18 @@
     line-height: 1.7;
 }
 
-/* NOTE */
+/* FOOTER NOTE */
 
 .fm-focus-history-note {
     margin: 20px 0 0;
     color: #858b9d;
     font-size: 11px;
     line-height: 1.7;
+}
+
+.fm-focus-history button:focus-visible {
+    outline: 2px solid #c4b5fd;
+    outline-offset: 3px;
 }
 
 /* RESPONSIVE */
@@ -244,6 +433,26 @@
     .fm-focus-history-stat strong {
         font-size: 21px;
     }
+
+    .fm-focus-analytics {
+        padding: 16px;
+    }
+
+    .fm-focus-analytics-chart {
+        gap: 5px;
+    }
+
+    .fm-focus-analytics-bar-track {
+        padding: 0 2px;
+    }
+
+    .fm-focus-analytics-value {
+        font-size: 9px;
+    }
+
+    .fm-focus-analytics-day-date {
+        font-size: 9px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -258,5 +467,25 @@
 
     .fm-focus-history-stat strong {
         margin-left: auto;
+    }
+
+    .fm-focus-analytics-summary {
+        gap: 6px;
+    }
+
+    .fm-focus-analytics-summary>div {
+        padding: 10px;
+    }
+
+    .fm-focus-analytics-summary strong {
+        font-size: 15px;
+    }
+
+    .fm-focus-analytics-chart {
+        gap: 3px;
+    }
+
+    .fm-focus-analytics-day-date {
+        display: none;
     }
 }
