@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import type { FormEvent, ReactNode } from "react";
+
 import type {
   Task,
   Project,
@@ -9,12 +11,23 @@ import type {
   Priority,
   TaskSort,
 } from "../../types";
-import { formatDate, getTodayKey, isOverdue, isToday } from "../../utils/dates";
+
+import {
+  formatDate,
+  getTodayKey,
+  isOverdue,
+  isToday,
+  parseDateKey,
+  toDateKey,
+} from "../../utils/dates";
+
 import {
   getTaskInsights,
   matchesSmartTaskFilter,
 } from "../../utils/taskInsights";
+
 import type { SmartTaskFilter } from "../../utils/taskInsights";
+
 import "./Tasks.css";
 
 interface TasksProps {
@@ -37,6 +50,8 @@ type IconName =
   | "search"
   | "filter"
   | "chevron"
+  | "chevron-left"
+  | "chevron-right"
   | "check"
   | "calendar"
   | "edit"
@@ -44,6 +59,15 @@ type IconName =
   | "close"
   | "arrow"
   | "list";
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+const ANIMATION_MS = 420;
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const QUICK_FILTERS: {
   id: SmartTaskFilter;
@@ -56,16 +80,24 @@ const QUICK_FILTERS: {
   { id: "high-priority", label: "High priority" },
 ];
 
-const STATUS_OPTIONS: {
-  value: TaskStatus;
-  label: string;
-}[] = [
+const PRIORITY_OPTIONS: SelectOption[] = [
+  { value: "low", label: "Low priority" },
+  { value: "medium", label: "Medium priority" },
+  { value: "high", label: "High priority" },
+];
+
+const STATUS_OPTIONS: SelectOption[] = [
   { value: "todo", label: "To do" },
   { value: "in-progress", label: "In progress" },
   { value: "completed", label: "Completed" },
 ];
 
-const ANIMATION_MS = 420;
+const SORT_OPTIONS: SelectOption[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "priority", label: "Highest priority" },
+  { value: "due-date", label: "Nearest deadline" },
+];
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -76,12 +108,10 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
         <path d="m20 20-4-4" />
       </>
     ),
-    filter: (
-      <>
-        <path d="M4 7h16M7 12h10M10 17h4" />
-      </>
-    ),
+    filter: <path d="M4 7h16M7 12h10M10 17h4" />,
     chevron: <path d="m6 9 6 6 6-6" />,
+    "chevron-left": <path d="m15 18-6-6 6-6" />,
+    "chevron-right": <path d="m9 18 6-6-6-6" />,
     check: <path d="m5 12 4 4 14-14" />,
     calendar: (
       <>
@@ -102,7 +132,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
       </>
     ),
     close: <path d="M18 6 6 18M6 6l12 12" />,
-    arrow: <path d="m7 17 10-10M8 7h9v9" />,
+    arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
     list: (
       <>
         <path d="M9 6h12M9 12h12M9 18h12" />
@@ -128,6 +158,325 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
+/* CUSTOM DROPDOWN */
+
+interface CustomSelectProps {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  placeholder?: string;
+  priorityColors?: boolean;
+}
+
+function CustomSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  placeholder = "Select an option",
+  priorityColors = false,
+}: CustomSelectProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleOutside(event: PointerEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  function choose(nextValue: string) {
+    onChange(nextValue);
+    setOpen(false);
+  }
+
+  return (
+    <div
+      className={`fm-tasks-custom-select ${open ? "is-open" : ""}`}
+      ref={containerRef}
+    >
+      <button
+        type="button"
+        className="fm-tasks-select-trigger"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((previous) => !previous)}
+      >
+        <span className="fm-tasks-select-value">
+          {priorityColors && selected && (
+            <span
+              className={`fm-tasks-select-priority is-${value}`}
+              aria-hidden="true"
+            />
+          )}
+
+          {selected?.label ?? placeholder}
+        </span>
+
+        <span className="fm-tasks-select-chevron">
+          <Icon name="chevron" size={16} />
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="fm-tasks-select-menu"
+          role="listbox"
+          aria-label={ariaLabel}
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`fm-tasks-select-option ${
+                  isSelected ? "is-selected" : ""
+                }`}
+                onClick={() => choose(option.value)}
+              >
+                {priorityColors && (
+                  <span
+                    className={`fm-tasks-select-priority is-${option.value}`}
+                    aria-hidden="true"
+                  />
+                )}
+
+                <span>{option.label}</span>
+
+                {isSelected && <Icon name="check" size={15} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* CUSTOM DATE PICKER */
+
+interface DatePickerProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function CustomDatePicker({ value, onChange }: DatePickerProps) {
+  const [open, setOpen] = useState(false);
+
+  const initialDate = parseDateKey(value) ?? new Date();
+
+  const [viewDate, setViewDate] = useState(
+    () => new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
+  );
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const today = getTodayKey();
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleOutside(event: PointerEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  function toggleCalendar() {
+    if (!open) {
+      const date = parseDateKey(value) ?? new Date();
+
+      setViewDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
+
+    setOpen((previous) => !previous);
+  }
+
+  function changeMonth(direction: number) {
+    setViewDate(
+      (current) =>
+        new Date(current.getFullYear(), current.getMonth() + direction, 1),
+    );
+  }
+
+  function chooseDate(date: string) {
+    onChange(date);
+    setOpen(false);
+  }
+
+  const calendarDays = useMemo(() => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+
+    const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const count = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(year, month, index - firstWeekday + 1);
+
+      return {
+        key: toDateKey(date),
+        number: date.getDate(),
+        inMonth: date.getMonth() === month,
+      };
+    });
+  }, [viewDate]);
+
+  const monthTitle = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(viewDate);
+
+  const selectedLabel = value
+    ? formatDate(value, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "Choose a date";
+
+  return (
+    <div
+      className={`fm-tasks-datepicker ${open ? "is-open" : ""}`}
+      ref={containerRef}
+    >
+      <button
+        type="button"
+        className="fm-tasks-date-trigger"
+        aria-label="Choose due date"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={toggleCalendar}
+      >
+        <span className="fm-tasks-date-value">
+          <Icon name="calendar" size={16} />
+          <span className={value ? "" : "is-placeholder"}>{selectedLabel}</span>
+        </span>
+
+        <Icon name="chevron" size={16} />
+      </button>
+
+      {open && (
+        <div
+          className="fm-tasks-date-popover"
+          role="dialog"
+          aria-label="Choose due date"
+        >
+          <div className="fm-tasks-date-header">
+            <strong>{monthTitle}</strong>
+
+            <div className="fm-tasks-date-navigation">
+              <button
+                type="button"
+                aria-label="Previous month"
+                onClick={() => changeMonth(-1)}
+              >
+                <Icon name="chevron-left" size={17} />
+              </button>
+
+              <button
+                type="button"
+                aria-label="Next month"
+                onClick={() => changeMonth(1)}
+              >
+                <Icon name="chevron-right" size={17} />
+              </button>
+            </div>
+          </div>
+
+          <div className="fm-tasks-date-grid">
+            {WEEKDAYS.map((day) => (
+              <span key={day} className="fm-tasks-date-weekday">
+                {day}
+              </span>
+            ))}
+
+            {calendarDays.map((day) => (
+              <button
+                key={day.key}
+                type="button"
+                className={[
+                  "fm-tasks-date-day",
+                  !day.inMonth ? "is-outside" : "",
+                  day.key === today ? "is-today" : "",
+                  day.key === value ? "is-selected" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label={day.key}
+                aria-pressed={day.key === value}
+                onClick={() => chooseDate(day.key)}
+              >
+                {day.number}
+              </button>
+            ))}
+          </div>
+
+          <div className="fm-tasks-date-footer">
+            <button type="button" onClick={() => chooseDate("")}>
+              Clear
+            </button>
+
+            <button type="button" onClick={() => chooseDate(today)}>
+              Today
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function statusLabel(status: TaskStatus): string {
   return (
     STATUS_OPTIONS.find((option) => option.value === status)?.label ?? "To do"
@@ -135,8 +484,13 @@ function statusLabel(status: TaskStatus): string {
 }
 
 function priorityLabel(priority: Priority): string {
-  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)} priority`;
+  return (
+    PRIORITY_OPTIONS.find((option) => option.value === priority)?.label ??
+    "Low priority"
+  );
 }
+
+/* MAIN COMPONENT */
 
 function Tasks({
   tasks,
@@ -153,16 +507,17 @@ function Tasks({
   onStatusChange,
 }: TasksProps) {
   const [smartFilter, setSmartFilter] = useState<SmartTaskFilter>("all");
+
   const [formOpen, setFormOpen] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [openStatusId, setOpenStatusId] = useState<string | null>(null);
 
-  // Temporary visual state allows both directions to animate.
   const [pending, setPending] = useState<Record<string, TaskStatus>>({});
 
   const timers = useRef<Map<string, number>>(new Map());
   const pendingActions = useRef<Map<string, TaskStatus>>(new Map());
   const statusCallback = useRef(onStatusChange);
+
   statusCallback.current = onStatusChange;
 
   const formRef = useRef<HTMLDivElement>(null);
@@ -200,6 +555,29 @@ function Tasks({
     filters.status !== "all" ||
     filters.project !== "all" ||
     filters.sort !== "newest";
+
+  const projectOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "", label: "No project" },
+      ...projects.map((project) => ({
+        value: project.id,
+        label: project.name,
+      })),
+    ],
+    [projects],
+  );
+
+  const filterProjectOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "all", label: "All projects" },
+      { value: "none", label: "No project" },
+      ...projects.map((project) => ({
+        value: project.id,
+        label: project.name,
+      })),
+    ],
+    [projects],
+  );
 
   useEffect(() => {
     if (editing) setFormOpen(true);
@@ -248,7 +626,6 @@ function Tasks({
       activeTimers.forEach((handle) => window.clearTimeout(handle));
       activeTimers.clear();
 
-      // Finish pending changes if the page is closed mid-animation.
       actions.forEach((status, id) => statusCallback.current(id, status));
       actions.clear();
     };
@@ -313,7 +690,6 @@ function Tasks({
 
   function openCreateForm() {
     if (editing) onCancelEdit();
-
     setFormOpen(true);
 
     window.requestAnimationFrame(() => {
@@ -399,7 +775,6 @@ function Tasks({
 
   function renderTask(task: Task) {
     const project = projectFor(task);
-
     const isPending = Object.prototype.hasOwnProperty.call(pending, task.id);
 
     const visualStatus = pending[task.id] ?? task.status;
@@ -485,7 +860,9 @@ function Tasks({
                     className={`fm-tasks-status-option ${
                       visualStatus === option.value ? "is-selected" : ""
                     }`}
-                    onClick={() => changeStatus(task, option.value)}
+                    onClick={() =>
+                      changeStatus(task, option.value as TaskStatus)
+                    }
                   >
                     <span
                       className={`fm-tasks-status-dot is-${option.value}`}
@@ -601,7 +978,9 @@ function Tasks({
               <span className="fm-tasks-kicker">
                 {editing ? "UPDATE TASK" : "QUICK ADD"}
               </span>
+
               <h2>{editing ? "Edit your task" : "Create a task"}</h2>
+
               <p>
                 {editing
                   ? "Update the details below."
@@ -614,7 +993,6 @@ function Tasks({
               className="fm-tasks-icon-button"
               onClick={closeForm}
               aria-label="Close task form"
-              title="Close"
             >
               <Icon name="close" size={18} />
             </button>
@@ -630,7 +1008,9 @@ function Tasks({
                 type="text"
                 value={form.title}
                 onChange={(event) =>
-                  onFormChange({ title: event.target.value })
+                  onFormChange({
+                    title: event.target.value,
+                  })
                 }
                 placeholder="What needs to get done?"
                 maxLength={200}
@@ -640,53 +1020,47 @@ function Tasks({
 
             <div className="fm-tasks-form-grid">
               <div className="fm-tasks-field">
-                <label htmlFor="fm-task-priority">Priority</label>
+                <span className="fm-tasks-field-label">Priority</span>
 
-                <select
-                  id="fm-task-priority"
+                <CustomSelect
+                  ariaLabel="Task priority"
                   value={form.priority}
-                  onChange={(event) =>
+                  options={PRIORITY_OPTIONS}
+                  priorityColors
+                  onChange={(value) =>
                     onFormChange({
-                      priority: event.target.value as Priority,
+                      priority: value as Priority,
                     })
-                  }
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-
-              <div className="fm-tasks-field">
-                <label htmlFor="fm-task-date">Due date</label>
-
-                <input
-                  id="fm-task-date"
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(event) =>
-                    onFormChange({ dueDate: event.target.value })
                   }
                 />
               </div>
 
               <div className="fm-tasks-field">
-                <label htmlFor="fm-task-project">Project</label>
+                <span className="fm-tasks-field-label">Due date</span>
 
-                <select
-                  id="fm-task-project"
-                  value={form.projectId}
-                  onChange={(event) =>
-                    onFormChange({ projectId: event.target.value })
+                <CustomDatePicker
+                  value={form.dueDate}
+                  onChange={(value) =>
+                    onFormChange({
+                      dueDate: value,
+                    })
                   }
-                >
-                  <option value="">No project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
+                />
+              </div>
+
+              <div className="fm-tasks-field">
+                <span className="fm-tasks-field-label">Project</span>
+
+                <CustomSelect
+                  ariaLabel="Task project"
+                  value={form.projectId}
+                  options={projectOptions}
+                  onChange={(value) =>
+                    onFormChange({
+                      projectId: value,
+                    })
+                  }
+                />
               </div>
             </div>
 
@@ -758,7 +1132,9 @@ function Tasks({
               placeholder="Search your tasks..."
               value={filters.search}
               onChange={(event) =>
-                onFiltersChange({ search: event.target.value })
+                onFiltersChange({
+                  search: event.target.value,
+                })
               }
             />
           </div>
@@ -782,60 +1158,40 @@ function Tasks({
         {advancedFiltersOpen && (
           <div className="fm-tasks-advanced-filters">
             <div className="fm-tasks-filter-field">
-              <label htmlFor="fm-filter-status">Status</label>
-              <select
-                id="fm-filter-status"
+              <span className="fm-tasks-field-label">Status</span>
+              <CustomSelect
+                ariaLabel="Filter tasks by status"
                 value={filters.status}
-                onChange={(event) =>
-                  onFiltersChange({
-                    status: event.target.value,
-                  })
-                }
-              >
-                <option value="all">All statuses</option>
-                <option value="todo">To do</option>
-                <option value="in-progress">In progress</option>
-                <option value="completed">Completed</option>
-              </select>
+                options={[
+                  { value: "all", label: "All statuses" },
+                  ...STATUS_OPTIONS,
+                ]}
+                onChange={(value) => onFiltersChange({ status: value })}
+              />
             </div>
 
             <div className="fm-tasks-filter-field">
-              <label htmlFor="fm-filter-project">Project</label>
-              <select
-                id="fm-filter-project"
+              <span className="fm-tasks-field-label">Project</span>
+              <CustomSelect
+                ariaLabel="Filter tasks by project"
                 value={filters.project}
-                onChange={(event) =>
-                  onFiltersChange({
-                    project: event.target.value,
-                  })
-                }
-              >
-                <option value="all">All projects</option>
-                <option value="none">No project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
+                options={filterProjectOptions}
+                onChange={(value) => onFiltersChange({ project: value })}
+              />
             </div>
 
             <div className="fm-tasks-filter-field">
-              <label htmlFor="fm-filter-sort">Sort by</label>
-              <select
-                id="fm-filter-sort"
+              <span className="fm-tasks-field-label">Sort by</span>
+              <CustomSelect
+                ariaLabel="Sort tasks"
                 value={filters.sort}
-                onChange={(event) =>
+                options={SORT_OPTIONS}
+                onChange={(value) =>
                   onFiltersChange({
-                    sort: event.target.value as TaskSort,
+                    sort: value as TaskSort,
                   })
                 }
-              >
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="priority">Highest priority</option>
-                <option value="due-date">Nearest deadline</option>
-              </select>
+              />
             </div>
 
             <button
@@ -853,14 +1209,17 @@ function Tasks({
             <div className="fm-tasks-empty-icon">
               <Icon name="list" size={24} />
             </div>
+
             <h3>
               {tasks.length === 0 ? "A fresh start." : "No matching tasks."}
             </h3>
+
             <p>
               {tasks.length === 0
                 ? "Create your first task and start making progress."
                 : "Try adjusting your search or filters."}
             </p>
+
             <button
               type="button"
               className={

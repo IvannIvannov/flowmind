@@ -1,4 +1,4 @@
-/* FLOWMIND — MY TASKS, SMOOTH CHECK / UNCHECK */
+/* FLOWMIND — MY TASKS */
 
 .fm-tasks {
     width: 100%;
@@ -16,8 +16,7 @@
 }
 
 .fm-tasks button,
-.fm-tasks input,
-.fm-tasks select {
+.fm-tasks input {
     font-family: inherit;
 }
 
@@ -66,7 +65,8 @@
     line-height: 1.7;
 }
 
-.fm-tasks-new-button {
+.fm-tasks-new-button,
+.fm-tasks-primary-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -81,10 +81,19 @@
     font-size: 12px;
     font-weight: 650;
     cursor: pointer;
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
 }
 
-.fm-tasks-new-button:hover {
+.fm-tasks-new-button:hover,
+.fm-tasks-primary-button:hover {
     opacity: 0.85;
+}
+
+.fm-tasks-new-button:active,
+.fm-tasks-primary-button:active {
+    transform: scale(0.98);
 }
 
 /* OVERVIEW */
@@ -178,15 +187,13 @@
 }
 
 .fm-tasks-field label,
-.fm-tasks-filter-field label {
+.fm-tasks-field-label {
     color: var(--fm-secondary);
     font-size: 11px;
     font-weight: 650;
 }
 
-.fm-tasks-field input,
-.fm-tasks-field select,
-.fm-tasks-filter-field select {
+.fm-tasks-field input {
     width: 100%;
     min-width: 0;
     min-height: 44px;
@@ -199,9 +206,7 @@
     outline: none;
 }
 
-.fm-tasks-field input:focus,
-.fm-tasks-field select:focus,
-.fm-tasks-filter-field select:focus {
+.fm-tasks-field input:focus {
     border-color: var(--fm-border-strong);
 }
 
@@ -222,9 +227,326 @@
     gap: 13px;
 }
 
-.fm-tasks-field input[type="date"] {
-    color-scheme: inherit;
+/* CUSTOM SELECT */
+
+.fm-tasks-custom-select {
+    position: relative;
+    width: 100%;
+    min-width: 0;
 }
+
+.fm-tasks-select-trigger,
+.fm-tasks-date-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 13px;
+    border: 1px solid var(--fm-border);
+    border-radius: 10px;
+    background: var(--fm-panel);
+    color: var(--fm-text);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.fm-tasks-select-trigger:hover,
+.fm-tasks-date-trigger:hover {
+    background: var(--fm-hover);
+    border-color: var(--fm-border-strong);
+}
+
+.fm-tasks-custom-select.is-open .fm-tasks-select-trigger,
+.fm-tasks-datepicker.is-open .fm-tasks-date-trigger {
+    border-color: var(--fm-border-strong);
+    background: var(--fm-surface);
+    box-shadow: 0 0 0 3px var(--fm-panel);
+}
+
+.fm-tasks-select-value,
+.fm-tasks-date-value {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.fm-tasks-select-value>span:last-child,
+.fm-tasks-date-value>span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fm-tasks-select-chevron {
+    display: inline-flex;
+    align-items: center;
+    color: var(--fm-muted);
+    transition: transform 0.2s ease;
+}
+
+.fm-tasks-custom-select.is-open .fm-tasks-select-chevron {
+    transform: rotate(180deg);
+}
+
+.fm-tasks-select-menu {
+    position: absolute;
+    z-index: 120;
+    top: calc(100% + 7px);
+    left: 0;
+    width: 100%;
+    min-width: 180px;
+    max-height: 248px;
+    padding: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--fm-border);
+    border-radius: 12px;
+    background: var(--fm-surface);
+    box-shadow:
+        0 14px 45px rgba(0, 0, 0, 0.13),
+        0 3px 10px rgba(0, 0, 0, 0.04);
+    animation: fm-menu-appear 0.17s ease-out;
+}
+
+.fm-tasks-select-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fm-secondary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.fm-tasks-select-option:hover,
+.fm-tasks-select-option.is-selected {
+    background: var(--fm-panel);
+    color: var(--fm-text);
+}
+
+.fm-tasks-select-option>span:nth-last-child(2),
+.fm-tasks-select-option>span:last-child {
+    min-width: 0;
+}
+
+.fm-tasks-select-option>svg {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--fm-text);
+}
+
+.fm-tasks-select-priority {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 50%;
+}
+
+.fm-tasks-select-priority.is-high {
+    background: #ef4444;
+}
+
+.fm-tasks-select-priority.is-medium {
+    background: #f59e0b;
+}
+
+.fm-tasks-select-priority.is-low {
+    background: #22c55e;
+}
+
+/* CUSTOM DATE PICKER */
+
+.fm-tasks-datepicker {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+
+.fm-tasks-date-trigger>svg,
+.fm-tasks-date-value>svg {
+    flex-shrink: 0;
+    color: var(--fm-muted);
+}
+
+.fm-tasks-date-value .is-placeholder {
+    color: var(--fm-muted);
+}
+
+.fm-tasks-date-popover {
+    position: absolute;
+    z-index: 130;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 310px;
+    max-width: calc(100vw - 48px);
+    padding: 17px;
+    border: 1px solid var(--fm-border);
+    border-radius: 15px;
+    background: var(--fm-surface);
+    color: var(--fm-text);
+    box-shadow:
+        0 16px 48px rgba(0, 0, 0, 0.15),
+        0 4px 12px rgba(0, 0, 0, 0.04);
+    animation: fm-menu-appear 0.19s ease-out;
+}
+
+.fm-tasks-date-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 17px;
+}
+
+.fm-tasks-date-header strong {
+    color: var(--fm-text);
+    font-size: 13px;
+    font-weight: 670;
+    letter-spacing: -0.25px;
+}
+
+.fm-tasks-date-navigation {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.fm-tasks-date-navigation button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fm-secondary);
+    cursor: pointer;
+}
+
+.fm-tasks-date-navigation button:hover {
+    border-color: var(--fm-border);
+    background: var(--fm-panel);
+    color: var(--fm-text);
+}
+
+.fm-tasks-date-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.fm-tasks-date-weekday {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 29px;
+    color: var(--fm-muted);
+    font-size: 10px;
+    font-weight: 620;
+}
+
+.fm-tasks-date-day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 34px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--fm-text);
+    font-size: 11px;
+    font-weight: 520;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition:
+        background-color 0.16s ease,
+        border-color 0.16s ease,
+        color 0.16s ease,
+        transform 0.16s ease;
+}
+
+.fm-tasks-date-day:hover {
+    background: var(--fm-hover);
+    border-color: var(--fm-border);
+}
+
+.fm-tasks-date-day:active {
+    transform: scale(0.93);
+}
+
+.fm-tasks-date-day.is-outside {
+    color: var(--fm-muted);
+    opacity: 0.45;
+}
+
+.fm-tasks-date-day.is-today {
+    border-color: var(--fm-border-strong);
+    font-weight: 750;
+}
+
+.fm-tasks-date-day.is-selected,
+.fm-tasks-date-day.is-selected:hover {
+    background: var(--fm-text);
+    border-color: var(--fm-text);
+    color: var(--fm-contrast);
+    font-weight: 700;
+    opacity: 1;
+}
+
+.fm-tasks-date-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 13px;
+    border-top: 1px solid var(--fm-border);
+}
+
+.fm-tasks-date-footer button {
+    padding: 7px 11px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fm-secondary);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.fm-tasks-date-footer button:hover {
+    background: var(--fm-panel);
+    color: var(--fm-text);
+}
+
+/* FORM FOOTER */
 
 .fm-tasks-form-footer {
     display: flex;
@@ -248,34 +570,19 @@
     margin-left: auto;
 }
 
-.fm-tasks-primary-button,
 .fm-tasks-secondary-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 9px;
     min-height: 41px;
     padding: 10px 16px;
+    border: 1px solid var(--fm-border);
     border-radius: 10px;
+    background: var(--fm-surface);
+    color: var(--fm-text);
     font-size: 12px;
     font-weight: 650;
     cursor: pointer;
-}
-
-.fm-tasks-primary-button {
-    border: 1px solid var(--fm-text);
-    background: var(--fm-text);
-    color: var(--fm-contrast);
-}
-
-.fm-tasks-secondary-button {
-    border: 1px solid var(--fm-border);
-    background: var(--fm-surface);
-    color: var(--fm-text);
-}
-
-.fm-tasks-primary-button:hover {
-    opacity: 0.85;
 }
 
 .fm-tasks-secondary-button:hover {
@@ -294,7 +601,6 @@
 
 .fm-tasks-section-heading {
     display: flex;
-    align-items: flex-start;
     justify-content: space-between;
     gap: 15px;
     margin-bottom: 23px;
@@ -339,11 +645,13 @@
     color: var(--fm-secondary);
     font-size: 11px;
     font-weight: 600;
+    white-space: nowrap;
     cursor: pointer;
 }
 
 .fm-tasks-quick-filter:hover {
     background: var(--fm-hover);
+    color: var(--fm-text);
 }
 
 .fm-tasks-quick-filter.active {
@@ -353,16 +661,19 @@
 }
 
 .fm-tasks-quick-filter>span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 21px;
     padding: 3px 6px;
     border-radius: 6px;
     background: var(--fm-surface);
     color: var(--fm-muted);
     font-size: 10px;
-    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
-/* SEARCH */
+/* SEARCH AND FILTERS */
 
 .fm-tasks-toolbar {
     display: flex;
@@ -385,13 +696,18 @@
     color: var(--fm-muted);
 }
 
+.fm-tasks-search-wrap:focus-within {
+    border-color: var(--fm-border-strong);
+}
+
 .fm-tasks-search-wrap input {
     flex: 1;
     width: 100%;
     min-width: 0;
-    height: 42px;
-    border: none;
-    outline: none;
+    min-height: 42px;
+    padding: 0;
+    border: 0;
+    outline: 0;
     background: transparent;
     color: var(--fm-text);
     font-size: 12px;
@@ -405,7 +721,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 9px;
+    gap: 10px;
     min-height: 44px;
     padding: 10px 15px;
     border: 1px solid var(--fm-border);
@@ -413,15 +729,19 @@
     background: var(--fm-surface);
     color: var(--fm-secondary);
     font-size: 12px;
+    font-weight: 600;
     cursor: pointer;
 }
 
-.fm-tasks-filter-button.active,
-.fm-tasks-filter-button:hover {
+.fm-tasks-filter-button:hover,
+.fm-tasks-filter-button.active {
+    border-color: var(--fm-border-strong);
     background: var(--fm-panel);
+    color: var(--fm-text);
 }
 
 .fm-tasks-active-indicator {
+    display: inline-block;
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -430,17 +750,18 @@
 
 .fm-tasks-advanced-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    grid-template-columns:
+        repeat(3, minmax(0, 1fr)) auto;
     align-items: end;
     gap: 12px;
-    margin-bottom: 23px;
+    margin: -6px 0 23px;
     padding: 19px;
     border: 1px solid var(--fm-border);
     border-radius: 12px;
     background: var(--fm-panel);
 }
 
-.fm-tasks-advanced-filters select {
+.fm-tasks-advanced-filters .fm-tasks-select-trigger {
     background: var(--fm-surface);
 }
 
@@ -452,10 +773,17 @@
     background: var(--fm-surface);
     color: var(--fm-secondary);
     font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
     cursor: pointer;
 }
 
-/* GROUPS */
+.fm-tasks-reset-filters:hover {
+    background: var(--fm-hover);
+    color: var(--fm-text);
+}
+
+/* TASK GROUPS */
 
 .fm-tasks-groups {
     display: flex;
@@ -481,17 +809,21 @@
     margin: 0;
     color: var(--fm-text);
     font-size: 13px;
-    font-weight: 650;
+    font-weight: 660;
 }
 
 .fm-tasks-group-name>span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 23px;
-    padding: 4px 7px;
+    height: 22px;
+    padding: 0 7px;
     border-radius: 7px;
     background: var(--fm-panel);
     color: var(--fm-muted);
     font-size: 10px;
-    text-align: center;
+    font-weight: 650;
 }
 
 .fm-tasks-group-header p {
@@ -528,7 +860,7 @@
     background: var(--fm-hover);
 }
 
-/* SMOOTH CHECKBOX IN BOTH DIRECTIONS */
+/* SMOOTH CHECKBOX */
 
 .fm-tasks-checkbox {
     position: relative;
@@ -598,6 +930,7 @@
 
 .fm-tasks-title {
     display: block;
+    width: fit-content;
     max-width: 100%;
     padding: 0;
     border: none;
@@ -609,9 +942,7 @@
     text-align: left;
     overflow-wrap: anywhere;
     cursor: pointer;
-    transition:
-        color 0.38s ease,
-        opacity 0.38s ease;
+    transition: color 0.38s ease;
 }
 
 .fm-tasks-title:hover {
@@ -653,7 +984,7 @@
     font-weight: 650;
 }
 
-/* PRIORITIES */
+/* PRIORITY COLORS */
 
 .fm-tasks-priority {
     font-weight: 650;
@@ -661,9 +992,9 @@
 
 .fm-tasks-priority-dot {
     display: inline-block;
-    flex-shrink: 0;
     width: 7px;
     height: 7px;
+    flex-shrink: 0;
     border-radius: 50%;
     background: currentColor;
 }
@@ -692,7 +1023,7 @@
     color: #4ade80;
 }
 
-/* ACTIONS */
+/* TASK ACTIONS */
 
 .fm-tasks-item-actions {
     display: flex;
@@ -723,7 +1054,7 @@
     color: var(--fm-text);
 }
 
-/* STATUS PICKER */
+/* ROW STATUS MENU */
 
 .fm-tasks-status-control {
     position: relative;
@@ -759,9 +1090,9 @@
 
 .fm-tasks-status-dot {
     display: inline-block;
-    flex-shrink: 0;
     width: 7px;
     height: 7px;
+    flex-shrink: 0;
     border: 1px solid var(--fm-border-strong);
     border-radius: 50%;
     background: transparent;
@@ -781,7 +1112,7 @@
 
 .fm-tasks-status-menu {
     position: absolute;
-    z-index: 80;
+    z-index: 110;
     top: calc(100% + 7px);
     right: 0;
     display: flex;
@@ -793,6 +1124,7 @@
     border-radius: 12px;
     background: var(--fm-surface);
     box-shadow: 0 14px 40px #00000017;
+    animation: fm-menu-appear 0.17s ease-out;
 }
 
 .fm-tasks-menu-label {
@@ -808,8 +1140,9 @@
     align-items: center;
     gap: 10px;
     width: 100%;
+    min-height: 36px;
     padding: 8px 9px;
-    border: none;
+    border: 0;
     border-radius: 8px;
     background: transparent;
     color: var(--fm-secondary);
@@ -866,7 +1199,19 @@
     line-height: 1.7;
 }
 
-/* CHECK AND UNCHECK ANIMATIONS */
+/* ANIMATIONS */
+
+@keyframes fm-menu-appear {
+    from {
+        opacity: 0;
+        transform: translateY(-5px) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
 
 @keyframes fm-soft-check {
     0% {
@@ -899,8 +1244,7 @@
 /* ACCESSIBILITY */
 
 .fm-tasks button:focus-visible,
-.fm-tasks input:focus-visible,
-.fm-tasks select:focus-visible {
+.fm-tasks input:focus-visible {
     outline: 2px solid var(--fm-text);
     outline-offset: 3px;
 }
@@ -909,7 +1253,8 @@
 
 @media (max-width: 1050px) {
     .fm-tasks-advanced-filters {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -929,12 +1274,17 @@
         justify-content: flex-end;
     }
 
-    .fm-tasks-group-header>p {
+    .fm-tasks-group-header p {
         display: none;
     }
 
     .fm-tasks-form-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+
+    .fm-tasks-datepicker {
+        z-index: 2;
     }
 }
 
@@ -943,8 +1293,13 @@
         flex-wrap: wrap;
     }
 
+    .fm-tasks-header h1 {
+        font-size: 32px;
+    }
+
     .fm-tasks-overview {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
         padding: 15px 20px;
     }
 
@@ -963,6 +1318,10 @@
 
     .fm-tasks-overview-item:nth-child(-n + 2) {
         border-top: none;
+    }
+
+    .fm-tasks-overview-item strong {
+        font-size: 27px;
     }
 
     .fm-tasks-workspace,
@@ -988,10 +1347,15 @@
     .fm-tasks-quick-filters {
         flex-wrap: nowrap;
         overflow-x: auto;
+        padding-bottom: 12px;
     }
 
     .fm-tasks-quick-filter {
         flex-shrink: 0;
+    }
+
+    .fm-tasks-date-popover {
+        width: min(310px, calc(100vw - 70px));
     }
 }
 
