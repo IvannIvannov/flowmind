@@ -44,7 +44,8 @@
 
 .fm-day-overview {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+    grid-template-columns:
+        minmax(0, 2fr) repeat(2, minmax(0, 1fr));
     gap: 16px;
     margin-bottom: 24px;
 }
@@ -220,6 +221,145 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
+}
+
+/* FOCUS CONTROLS */
+
+.fm-day-focus-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.fm-day-outline-button {
+    padding: 12px 18px;
+    border: 1px solid #554277;
+    border-radius: 10px;
+    background: #302a45;
+    color: #e2d9ff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fm-day-outline-button:hover {
+    background: #403456;
+}
+
+.fm-day-focus-picker {
+    margin-bottom: 20px;
+    padding: 20px;
+    border: 1px solid #48415f;
+    border-radius: 13px;
+    background: #171923;
+}
+
+.fm-day-picker-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 17px;
+}
+
+.fm-day-picker-heading h3 {
+    margin: 0 0 7px;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+.fm-day-picker-heading p {
+    margin: 0;
+    color: #989eae;
+    font-size: 12px;
+}
+
+.fm-day-focus-search {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    border: 1px solid #383b4d;
+    border-radius: 10px;
+    background: #12141d;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.fm-day-focus-search::placeholder {
+    color: #777e91;
+}
+
+.fm-day-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 310px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.fm-day-picker-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px;
+    border: 1px solid #343747;
+    border-radius: 10px;
+    background: #242633;
+    color: #ffffff;
+    cursor: pointer;
+}
+
+.fm-day-picker-option:hover {
+    border-color: #65548e;
+}
+
+.fm-day-picker-option.selected {
+    border-color: #8b5cf6;
+    background: #302a45;
+}
+
+.fm-day-picker-option input {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    accent-color: #8b5cf6;
+    cursor: pointer;
+}
+
+.fm-day-picker-option input:disabled {
+    cursor: not-allowed;
+}
+
+.fm-day-picker-option:has(input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.fm-day-picker-task {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.fm-day-picker-task strong {
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.fm-day-picker-task>span {
+    color: #a3a8b8;
+    font-size: 11px;
+    line-height: 1.5;
 }
 
 /* TASK LIST */
@@ -419,7 +559,8 @@
 
 /* ACCESSIBILITY */
 
-.fm-day button:focus-visible {
+.fm-day button:focus-visible,
+.fm-day input:focus-visible {
     outline: 2px solid #c4b5fd;
     outline-offset: 3px;
 }
@@ -428,7 +569,8 @@
 
 @media (max-width: 1350px) {
     .fm-day-overview {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
     }
 
     .fm-day-progress-card {
@@ -465,6 +607,10 @@
 
     .fm-day-task-info h3 {
         font-size: 13px;
+    }
+
+    .fm-day-focus-picker {
+        padding: 14px;
     }
 }
 
