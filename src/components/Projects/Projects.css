@@ -92,6 +92,23 @@
     line-height: 1.6;
 }
 
+/* ALTERNATIVE NAMES FIELD */
+
+.fm-projects-field-hint {
+    margin: 0;
+    color: #8d93a6;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+#fm-project-aliases {
+    min-height: 78px;
+}
+
+#fm-project-aliases:focus {
+    border-color: #8b5cf6;
+}
+
 /* COLOR PICKER */
 
 .fm-projects-colors {
@@ -242,6 +259,42 @@
     overflow-wrap: anywhere;
 }
 
+/* PROJECT ALIASES */
+
+.fm-projects-aliases {
+    margin-top: 16px;
+    margin-bottom: 18px;
+}
+
+.fm-projects-aliases-title {
+    margin: 0 0 10px;
+    color: #a78bfa;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.3px;
+}
+
+.fm-projects-aliases-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.fm-projects-alias {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #4a406b;
+    border-radius: 8px;
+    background: #302a45;
+    color: #d4c7ff;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
 /* PROGRESS */
 
 .fm-projects-progress-label {
@@ -335,5 +388,9 @@
 
     .fm-projects-card {
         padding: 20px;
+    }
+
+    .fm-projects-aliases-list {
+        gap: 6px;
     }
 }

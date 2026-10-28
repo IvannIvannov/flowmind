@@ -83,6 +83,30 @@ function Projects({
           </div>
 
           <div className="fm-projects-field">
+            <label htmlFor="fm-project-aliases">
+              Alternative Names (Optional)
+            </label>
+
+            <textarea
+              id="fm-project-aliases"
+              placeholder="e.g. Mazu, Mazu Beach, Мазу Бийч"
+              value={form.aliases}
+              maxLength={500}
+              rows={2}
+              onChange={(event) =>
+                onFormChange({
+                  aliases: event.target.value,
+                })
+              }
+            />
+
+            <p className="fm-projects-field-hint">
+              Separate names with commas. FlowMind AI will use these names to
+              recognize your project in notes.
+            </p>
+          </div>
+
+          <div className="fm-projects-field">
             <span className="fm-projects-label">Project Color</span>
 
             <div
@@ -167,6 +191,22 @@ function Projects({
                 <p className="fm-projects-card-description">
                   {project.description || "No description"}
                 </p>
+
+                {project.aliases && project.aliases.length > 0 && (
+                  <div className="fm-projects-aliases">
+                    <p className="fm-projects-aliases-title">
+                      ALTERNATIVE NAMES
+                    </p>
+
+                    <div className="fm-projects-aliases-list">
+                      {project.aliases.map((alias) => (
+                        <span className="fm-projects-alias" key={alias}>
+                          {alias}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="fm-projects-progress-label">
                   <span>

@@ -64,8 +64,37 @@ const INITIAL_PROJECT_FORM: ProjectFormState = {
   name: "",
   description: "",
   color: COLORS[0],
+  aliases: "",
   editingId: null,
 };
+
+function normalizeProjectName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("bg-BG");
+}
+
+function parseProjectAliases(value: string): string[] {
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value.split(",")) {
+    const alias = item.trim().replace(/\s+/g, " ");
+
+    if (!alias) {
+      continue;
+    }
+
+    const normalized = normalizeProjectName(alias);
+
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    aliases.push(alias);
+  }
+
+  return aliases;
+}
 
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -118,7 +147,9 @@ function App() {
           const difference =
             PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
 
-          if (difference !== 0) return difference;
+          if (difference !== 0) {
+            return difference;
+          }
         }
 
         if (sort === "due-date") {
@@ -161,7 +192,10 @@ function App() {
     event.preventDefault();
 
     const name = taskForm.title.trim();
-    if (!name) return;
+
+    if (!name) {
+      return;
+    }
 
     const projectId = projects.some(
       (project) => project.id === taskForm.projectId,
@@ -228,7 +262,9 @@ function App() {
   function deleteTask(task: Task) {
     const confirmed = window.confirm(`Delete task "${task.title}"?`);
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setTasks((previous) => previous.filter((item) => item.id !== task.id));
 
@@ -237,12 +273,14 @@ function App() {
     }
   }
 
-  // TASK CREATION FROM ASSISTANT
+  // TASK CREATION FROM AI ASSISTANT
 
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
     const name = draft.title.trim();
 
-    if (!name) return;
+    if (!name) {
+      return;
+    }
 
     const projectId = projects.some((project) => project.id === draft.projectId)
       ? draft.projectId
@@ -279,17 +317,44 @@ function App() {
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const name = projectForm.name.trim();
-    if (!name) return;
+    const name = projectForm.name.trim().replace(/\s+/g, " ");
 
-    const duplicate = projects.some(
-      (project) =>
-        project.name.trim().toLowerCase() === name.toLowerCase() &&
-        project.id !== projectForm.editingId,
+    if (!name) {
+      return;
+    }
+
+    const normalizedName = normalizeProjectName(name);
+
+    const aliases = parseProjectAliases(projectForm.aliases).filter(
+      (alias) => normalizeProjectName(alias) !== normalizedName,
     );
 
-    if (duplicate) {
-      window.alert("A project with this name already exists.");
+    const candidateNames = [name, ...aliases];
+
+    const candidateKeys = new Set(candidateNames.map(normalizeProjectName));
+
+    // Check that no name or alias is already
+    // used by a different project.
+
+    const conflictingProject = projects.find((project) => {
+      if (project.id === projectForm.editingId) {
+        return false;
+      }
+
+      const existingNames = [project.name, ...(project.aliases ?? [])];
+
+      return existingNames.some((existingName) =>
+        candidateKeys.has(normalizeProjectName(existingName)),
+      );
+    });
+
+    if (conflictingProject) {
+      window.alert(
+        `A name or alternative name is already used ` +
+          `by "${conflictingProject.name}". ` +
+          `Please choose unique project names.`,
+      );
+
       return;
     }
 
@@ -302,6 +367,7 @@ function App() {
                 name,
                 description: projectForm.description.trim(),
                 color: projectForm.color,
+                aliases,
               }
             : project,
         ),
@@ -312,6 +378,7 @@ function App() {
         name,
         description: projectForm.description.trim(),
         color: projectForm.color,
+        aliases,
         createdAt: new Date().toISOString(),
       };
 
@@ -326,8 +393,11 @@ function App() {
       name: project.name,
       description: project.description,
       color: project.color,
+      aliases: (project.aliases ?? []).join(", "),
       editingId: project.id,
     });
+
+    setPage("projects");
   }
 
   function deleteProject(project: Project) {
@@ -339,7 +409,9 @@ function App() {
         "The tasks themselves will NOT be deleted.",
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setProjects((previous) =>
       previous.filter((item) => item.id !== project.id),
@@ -348,17 +420,24 @@ function App() {
     setTasks((previous) =>
       previous.map((task) =>
         task.projectId === project.id
-          ? { ...task, projectId: undefined }
+          ? {
+              ...task,
+              projectId: undefined,
+            }
           : task,
       ),
     );
 
     if (taskFilters.project === project.id) {
-      updateTaskFilters({ project: "all" });
+      updateTaskFilters({
+        project: "all",
+      });
     }
 
     if (taskForm.projectId === project.id) {
-      updateTaskForm({ projectId: "" });
+      updateTaskForm({
+        projectId: "",
+      });
     }
 
     if (projectForm.editingId === project.id) {

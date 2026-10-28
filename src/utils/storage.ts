@@ -30,12 +30,18 @@ export function isProject(value: unknown): value is Project {
     return false;
   }
 
+  const validAliases =
+    value.aliases === undefined ||
+    (Array.isArray(value.aliases) &&
+      value.aliases.every((alias: unknown) => typeof alias === "string"));
+
   return (
     typeof value.id === "string" &&
     typeof value.name === "string" &&
     typeof value.description === "string" &&
     typeof value.color === "string" &&
-    typeof value.createdAt === "string"
+    typeof value.createdAt === "string" &&
+    validAliases
   );
 }
 

@@ -22,6 +22,7 @@ export interface Project {
   description: string;
   color: string;
   createdAt: string;
+  aliases?: string[];
 }
 
 export interface TaskFormState {
@@ -43,6 +44,7 @@ export interface ProjectFormState {
   name: string;
   description: string;
   color: string;
+  aliases: string;
   editingId: string | null;
 }
 

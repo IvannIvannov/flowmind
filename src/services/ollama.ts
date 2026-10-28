@@ -23,6 +23,11 @@ export interface ExtractionResult {
   analyzedSections: number;
 }
 
+interface NoteSection {
+  text: string;
+  contextProjectId: string;
+}
+
 interface SectionResult {
   tasks: SuggestedTask[];
   warnings: string[];
@@ -80,6 +85,103 @@ function normalize(text: string): string {
   return text.toLocaleLowerCase("bg-BG").replace(/\s+/g, " ").trim();
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsPhrase(text: string, phrase: string): boolean {
+  const name = normalize(phrase);
+
+  if (!name) return false;
+
+  const pattern = new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escapeRegex(name)}(?=$|[^\\p{L}\\p{N}])`,
+    "u",
+  );
+
+  return pattern.test(normalize(text));
+}
+
+// Get every valid name of a project,
+// including the aliases added by the user.
+function getProjectNames(project: Project): string[] {
+  const allNames = [project.name, ...(project.aliases ?? [])];
+
+  const unique = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of allNames) {
+    const name = item.trim();
+
+    if (!name) continue;
+
+    const normalized = normalize(name);
+
+    if (unique.has(normalized)) continue;
+
+    unique.add(normalized);
+    result.push(name);
+  }
+
+  return result;
+}
+
+function matchingProjectIds(text: string, projects: Project[]): string[] {
+  const matched = projects.filter((project) =>
+    getProjectNames(project).some((name) => containsPhrase(text, name)),
+  );
+
+  return matched.map((project) => project.id);
+}
+
+function explicitProject(text: string, projects: Project[]): string {
+  const matches = [...new Set(matchingProjectIds(text, projects))];
+
+  return matches.length === 1 ? matches[0] : "";
+}
+
+function findProject(proposedName: unknown, projects: Project[]): string {
+  if (typeof proposedName !== "string") {
+    return "";
+  }
+
+  const requested = normalize(proposedName);
+
+  const matched = projects.filter((project) =>
+    getProjectNames(project).some((name) => normalize(name) === requested),
+  );
+
+  return matched.length === 1 ? matched[0].id : "";
+}
+
+function chooseProject(
+  section: NoteSection,
+  projects: Project[],
+  proposedName: unknown,
+): string {
+  const matches = [...new Set(matchingProjectIds(section.text, projects))];
+
+  // Never assign a project if the section
+  // explicitly mentions different projects.
+  if (matches.length > 1) {
+    return "";
+  }
+
+  if (matches.length === 1) {
+    return matches[0];
+  }
+
+  // Use the heading currently active
+  // in the note, if one is recognized.
+  if (section.contextProjectId) {
+    return section.contextProjectId;
+  }
+
+  // The AI can suggest a project, but it must
+  // match an existing name or alias exactly.
+  return findProject(proposedName, projects);
+}
+
 function dateKey(date: Date): string {
   return [
     date.getFullYear(),
@@ -89,17 +191,17 @@ function dateKey(date: Date): string {
 }
 
 function makeDate(year: number, month: number, day: number): Date | null {
-  const date = new Date(year, month - 1, day);
+  const result = new Date(year, month - 1, day);
 
   if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
+    result.getFullYear() !== year ||
+    result.getMonth() !== month - 1 ||
+    result.getDate() !== day
   ) {
     return null;
   }
 
-  return date;
+  return result;
 }
 
 function addDays(date: Date, amount: number): Date {
@@ -128,8 +230,7 @@ function resolveDate(expression: string, today: Date): string {
   }
 
   if (text === "до края на седмицата") {
-    const offset = (7 - today.getDay()) % 7;
-    return dateKey(addDays(today, offset));
+    return dateKey(addDays(today, (7 - today.getDay()) % 7));
   }
 
   if (text === "до края на месеца") {
@@ -213,9 +314,7 @@ function resolveDate(expression: string, today: Date): string {
       return dateKey(addDays(nextMonday, (target + 6) % 7));
     }
 
-    const offset = (target - today.getDay() + 7) % 7;
-
-    return dateKey(addDays(today, offset));
+    return dateKey(addDays(today, (target - today.getDay() + 7) % 7));
   }
 
   return "";
@@ -239,7 +338,10 @@ function getDeadline(
   const uniqueDates = [...new Set(dates)];
 
   if (uniqueDates.length === 0) {
-    return { date: "", warning: "" };
+    return {
+      date: "",
+      warning: "",
+    };
   }
 
   if (uniqueDates.length === 1) {
@@ -269,32 +371,6 @@ function getPriority(section: string): Priority {
   }
 
   return "medium";
-}
-
-function findProject(value: unknown, projects: Project[]): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const requested = normalize(value);
-
-  const found = projects.find(
-    (project) => normalize(project.name) === requested,
-  );
-
-  return found?.id ?? "";
-}
-
-function guessProject(section: string, projects: Project[]): string {
-  const source = normalize(section);
-
-  const matched = projects.filter(
-    (project) =>
-      project.name.trim().length > 0 &&
-      source.includes(normalize(project.name)),
-  );
-
-  return matched.length === 1 ? matched[0].id : "";
 }
 
 function isClearlyPastInformation(section: string): boolean {
@@ -335,8 +411,7 @@ function startsWithAction(section: string): boolean {
       `(?:(?:в|във|до)\\s+)?(?:${DAY_NAMES})|`,
       `(?:другата|другия|следващата|следващия)\\s+(?:${DAY_NAMES})|`,
       `(?:на|до)\\s+\\d{1,2}\\s+(?:${MONTH_NAMES})`,
-      ")",
-      "\\s+",
+      ")\\s+",
     ].join(""),
     "u",
   );
@@ -355,7 +430,9 @@ function splitClauses(sentence: string): string[] {
   let start = 0;
 
   for (const match of sentence.matchAll(separator)) {
-    if (match.index === undefined) continue;
+    if (match.index === undefined) {
+      continue;
+    }
 
     const nextStart = match.index + match[0].length;
 
@@ -383,14 +460,59 @@ function splitClauses(sentence: string): string[] {
   return parts;
 }
 
-function splitNote(note: string): string[] {
-  const sentences = note
-    .replace(/\r\n/g, "\n")
-    .split(/\n+|[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
+function splitSentences(line: string): string[] {
+  const sentences = line
+    .split(/[;!?]\s*|(?<!\d)\.(?=\s+[А-ЯA-Z]|\s*$)/u)
     .map((part) => part.trim())
     .filter(Boolean);
 
   return sentences.flatMap(splitClauses);
+}
+
+function splitNote(note: string, projects: Project[]): NoteSection[] {
+  const sections: NoteSection[] = [];
+  let contextProjectId = "";
+
+  const lines = note.replace(/\r\n/g, "\n").split("\n");
+
+  for (const rawLine of lines) {
+    let line = rawLine.trim();
+
+    if (!line) continue;
+
+    // Standalone project heading:
+    // "Mazu Beach:"
+    const heading = line.match(/^(.{1,70}):$/u);
+
+    if (heading) {
+      const name = heading[1].replace(/^(?:за|проект)\s+/iu, "").trim();
+
+      contextProjectId = explicitProject(name, projects);
+
+      continue;
+    }
+
+    // Inline heading:
+    // "Mazu Beach: Монтирай рийл"
+    const inlineHeading = line.match(/^([^:]{1,70}):\s+(.+)$/u);
+
+    if (inlineHeading) {
+      const name = inlineHeading[1].replace(/^(?:за|проект)\s+/iu, "").trim();
+
+      contextProjectId = explicitProject(name, projects);
+
+      line = inlineHeading[2].trim();
+    }
+
+    for (const text of splitSentences(line)) {
+      sections.push({
+        text,
+        contextProjectId,
+      });
+    }
+  }
+
+  return sections;
 }
 
 function fallbackTitle(section: string): string {
@@ -421,7 +543,7 @@ function fallbackTitle(section: string): string {
 
 function makeSuggestion(
   title: string,
-  section: string,
+  section: NoteSection,
   projects: Project[],
   today: Date,
   proposedProject: unknown,
@@ -430,19 +552,17 @@ function makeSuggestion(
   task: SuggestedTask;
   warning: string;
 } {
-  const deadline = getDeadline(section, today);
+  const deadline = getDeadline(section.text, today);
 
   return {
     task: {
       id: crypto.randomUUID(),
       title: title.trim().slice(0, 200),
-      priority: getPriority(section),
+      priority: getPriority(section.text),
       dueDate: deadline.date,
-      projectId:
-        findProject(proposedProject, projects) ||
-        guessProject(section, projects),
+      projectId: chooseProject(section, projects, proposedProject),
       selected: true,
-      sourceText: section,
+      sourceText: section.text,
       origin,
     },
     warning: deadline.warning,
@@ -467,53 +587,62 @@ const RESPONSE_SCHEMA = {
   required: ["tasks"],
 };
 
-function buildPrompt(section: string, projects: Project[]): string {
+function buildPrompt(section: NoteSection, projects: Project[]): string {
+  const contextProject = projects.find(
+    (project) => project.id === section.contextProjectId,
+  );
+
+  const availableProjects = projects.map((project) => ({
+    name: project.name,
+    aliases: project.aliases ?? [],
+  }));
+
   return `
 Extract pending tasks from Bulgarian notes.
 
 AVAILABLE PROJECTS:
-${JSON.stringify(projects.map((p) => p.name))}
+${JSON.stringify(availableProjects)}
+
+CURRENT PROJECT CONTEXT:
+${contextProject?.name ?? "None"}
 
 Return JSON:
 {"tasks":[{"title":"...","projectName":""}]}
 
 RULES:
-- Include actions that still need to be done.
+- Include actions still needing to be done.
 - Exclude past meetings and completed events.
-- Keep every explicit pending action.
-- Write short Bulgarian task titles.
-- Do not invent actions or subtasks.
-- Keep a single action with several objects
-  as one task.
-- Use a project name only if it exactly
-  matches an available project.
-- Otherwise set projectName to "".
+- Keep all explicit pending actions.
+- Use short Bulgarian task titles.
+- Do not invent tasks or subtasks.
+- Keep one action with multiple objects
+  as a single task.
+- Project aliases refer to their parent project.
+- Use the current project context if relevant.
+- Only use an existing project name or alias.
+- If uncertain about the project, use "".
 - If there are no tasks, return {"tasks":[]}.
 
 EXAMPLES:
-
 INPUT: До петък трябва да изпратя имейл.
 OUTPUT: {"tasks":[{"title":"Изпрати имейл","projectName":""}]}
-
-INPUT: Подготви снимки и видеа за клиента.
-OUTPUT: {"tasks":[{"title":"Подготви снимки и видеа за клиента","projectName":""}]}
 
 INPUT: Днес проведохме среща.
 OUTPUT: {"tasks":[]}
 
 INPUT:
-${section}
+${section.text}
 
 OUTPUT:
 `.trim();
 }
 
 async function analyzeSection(
-  section: string,
+  section: NoteSection,
   projects: Project[],
   today: Date,
 ): Promise<SectionResult> {
-  if (isClearlyPastInformation(section)) {
+  if (isClearlyPastInformation(section.text)) {
     return {
       tasks: [],
       warnings: [],
@@ -594,9 +723,11 @@ async function analyzeSection(
     }
   }
 
-  if (tasks.length === 0 && looksLikePendingAction(section)) {
+  // Fallback for clear pending actions
+  // when the local model misses them.
+  if (tasks.length === 0 && looksLikePendingAction(section.text)) {
     const result = makeSuggestion(
-      fallbackTitle(section),
+      fallbackTitle(section.text),
       section,
       projects,
       today,
@@ -607,15 +738,16 @@ async function analyzeSection(
     tasks.push(result.task);
 
     warnings.push(
-      `Fallback suggestion created from: "${section}". ` +
-        "Review its title and deadline.",
+      `Fallback suggestion created from: ` +
+        `"${section.text}". ` +
+        "Review its title, project and deadline.",
     );
 
     if (result.warning) {
       warnings.push(result.warning);
     }
   } else if (tasks.length === 0 && aiFailed) {
-    warnings.push(`Could not analyze this section: "${section}".`);
+    warnings.push(`Could not analyze this section: ` + `"${section.text}".`);
   }
 
   return {
@@ -634,7 +766,7 @@ export async function extractTasksWithOllama(
     throw new Error("Please enter a note first.");
   }
 
-  const sections = splitNote(note);
+  const sections = splitNote(note, projects);
 
   if (sections.length === 0) {
     throw new Error("No note sections found.");
