@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { Priority, Project, Task } from "../types";
 
@@ -7,8 +7,6 @@ import { extractTasksWithOllama } from "../services/ollama";
 import type { SuggestedTask } from "../services/ollama";
 
 import { findTaskDuplicates } from "../services/taskDuplicates";
-
-import type { DuplicateMatch } from "../services/taskDuplicates";
 
 import "./AIAssistant.css";
 
@@ -26,24 +24,25 @@ interface AIAssistantProps {
   onOpenTasks: () => void;
 }
 
-interface ReviewedTask extends SuggestedTask {
-  duplicateOverride: boolean;
+type CaptureMode = "quick" | "assistant";
+
+interface ReviewTask extends SuggestedTask {
+  allowDuplicate: boolean;
 }
 
-function getBestMatch(
-  task: ReviewedTask,
-  existingTasks: Task[],
-): DuplicateMatch | null {
-  return (
-    findTaskDuplicates(
-      {
-        title: task.title,
-        projectId: task.projectId,
-        dueDate: task.dueDate,
-      },
-      existingTasks,
-    )[0] ?? null
-  );
+const EXAMPLE_TEXT = `Да монтирам рийла за Мазу до петък
+Да изпратя имейлите за Radapola утре
+Да подготвя контент план за следващата седмица`;
+
+function normalizedTitle(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("bg-BG");
+}
+
+function makeReviewTask(task: SuggestedTask): ReviewTask {
+  return {
+    ...task,
+    allowDuplicate: false,
+  };
 }
 
 function AIAssistant({
@@ -52,196 +51,215 @@ function AIAssistant({
   onCreateTask,
   onOpenTasks,
 }: AIAssistantProps) {
-  const [note, setNote] = useState("");
-  const [suggestions, setSuggestions] = useState<ReviewedTask[]>([]);
+  const [mode, setMode] = useState<CaptureMode>("quick");
+
+  const [input, setInput] = useState("");
+  const [reviewTasks, setReviewTasks] = useState<ReviewTask[]>([]);
+
   const [warnings, setWarnings] = useState<string[]>([]);
+
   const [analyzedSections, setAnalyzedSections] = useState(0);
 
-  const [analyzing, setAnalyzing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [successCount, setSuccessCount] = useState(0);
 
-  const savingRef = useRef(false);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
 
-  const review = useMemo(
-    () =>
-      suggestions.map((suggestion) => ({
-        suggestion,
-        duplicate: getBestMatch(suggestion, tasks),
-      })),
-    [suggestions, tasks],
+  const selectedCount = reviewTasks.filter((task) => task.selected).length;
+
+  const existingTaskIds = useMemo(
+    () => new Set(tasks.map((task) => task.id)),
+    [tasks],
   );
 
-  const selectedCount = review.filter(
-    ({ suggestion, duplicate }) =>
-      suggestion.selected &&
-      (!duplicate ||
-        duplicate.level !== "exact" ||
-        suggestion.duplicateOverride),
-  ).length;
-
-  const duplicateCount = review.filter(
-    ({ duplicate }) => duplicate !== null,
-  ).length;
-
-  function updateSuggestion(id: string, changes: Partial<ReviewedTask>) {
-    setSuggestions((previous) =>
-      previous.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              ...changes,
-            }
-          : task,
-      ),
+  function updateReviewTask(id: string, changes: Partial<ReviewTask>) {
+    setReviewTasks((previous) =>
+      previous.map((task) => (task.id === id ? { ...task, ...changes } : task)),
     );
 
-    setSuccess("");
+    setSuccessCount(0);
   }
 
-  function removeSuggestion(id: string) {
-    setSuggestions((previous) => previous.filter((task) => task.id !== id));
+  function removeReviewTask(id: string) {
+    setReviewTasks((previous) => previous.filter((task) => task.id !== id));
   }
 
-  async function analyzeNote() {
-    if (!note.trim() || analyzing) {
-      return;
-    }
-
-    setAnalyzing(true);
-    setError("");
-    setSuccess("");
-    setSuggestions([]);
+  function resetReview() {
+    setReviewTasks([]);
     setWarnings([]);
     setAnalyzedSections(0);
-
-    try {
-      const result = await extractTasksWithOllama(note, projects);
-
-      const reviewedTasks: ReviewedTask[] = result.tasks.map((task) => {
-        const match = findTaskDuplicates(
-          {
-            title: task.title,
-            projectId: task.projectId,
-            dueDate: task.dueDate,
-          },
-          tasks,
-        )[0];
-
-        return {
-          ...task,
-          selected: match?.level === "exact" ? false : task.selected,
-          duplicateOverride: false,
-        };
-      });
-
-      setSuggestions(reviewedTasks);
-      setWarnings(result.warnings);
-      setAnalyzedSections(result.analyzedSections);
-
-      if (reviewedTasks.length === 0) {
-        setSuccess("No pending tasks were found in this note.");
-      }
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Could not analyze the note.",
-      );
-    } finally {
-      setAnalyzing(false);
-    }
+    setHasAnalyzed(false);
+    setError("");
+    setSuccessCount(0);
   }
 
-  function saveSelectedTasks() {
-    if (savingRef.current) {
+  function changeMode(next: CaptureMode) {
+    setMode(next);
+    resetReview();
+  }
+
+  function useExample() {
+    setInput(EXAMPLE_TEXT);
+    resetReview();
+  }
+
+  function clearInput() {
+    setInput("");
+    resetReview();
+  }
+
+  async function analyzeTasks() {
+    const source = input.trim();
+
+    if (!source || loading) {
       return;
     }
 
-    savingRef.current = true;
+    setLoading(true);
+    setError("");
+    setSuccessCount(0);
+    setWarnings([]);
+    setReviewTasks([]);
+    setHasAnalyzed(false);
 
     try {
-      const existingAndNew: Task[] = [...tasks];
-      const savedIds = new Set<string>();
-      const skippedIds = new Set<string>();
+      const result = await extractTasksWithOllama(source, projects);
 
-      for (const suggestion of suggestions) {
-        if (!suggestion.selected) {
-          continue;
+      const uniqueIds = new Set<string>();
+
+      const prepared = result.tasks.map((task) => {
+        let id = task.id || crypto.randomUUID();
+
+        if (uniqueIds.has(id)) {
+          id = crypto.randomUUID();
         }
 
-        const duplicate = findTaskDuplicates(
-          {
-            title: suggestion.title,
-            projectId: suggestion.projectId,
-            dueDate: suggestion.dueDate,
-          },
-          existingAndNew,
-        )[0];
+        uniqueIds.add(id);
 
-        if (duplicate?.level === "exact" && !suggestion.duplicateOverride) {
-          skippedIds.add(suggestion.id);
-          continue;
-        }
-
-        const title = suggestion.title.trim();
-
-        if (!title) {
-          skippedIds.add(suggestion.id);
-          continue;
-        }
-
-        const projectId = projects.some(
-          (project) => project.id === suggestion.projectId,
-        )
-          ? suggestion.projectId
-          : "";
-
-        const draft: AssistantTaskDraft = {
-          title,
-          priority: suggestion.priority,
-          dueDate: suggestion.dueDate,
-          projectId,
-        };
-
-        onCreateTask(draft);
-
-        existingAndNew.push({
-          id: crypto.randomUUID(),
-          title: draft.title,
-          priority: draft.priority,
-          dueDate: draft.dueDate || undefined,
-          projectId: draft.projectId || undefined,
-          status: "todo",
-          createdAt: new Date().toISOString(),
+        return makeReviewTask({
+          ...task,
+          id,
+          selected: task.selected ?? true,
         });
+      });
 
-        savedIds.add(suggestion.id);
-      }
+      setReviewTasks(prepared);
+      setWarnings(result.warnings);
+      setAnalyzedSections(result.analyzedSections);
+      setHasAnalyzed(true);
 
-      if (savedIds.size > 0) {
-        setSuggestions((previous) =>
-          previous.filter((task) => !savedIds.has(task.id)),
-        );
-
-        setSuccess(
-          `${savedIds.size} task(s) saved successfully.` +
-            (skippedIds.size > 0
-              ? ` ${skippedIds.size} duplicate or empty task(s) skipped.`
-              : ""),
-        );
-      } else {
+      if (prepared.length === 0) {
         setError(
-          "No tasks were saved. Select tasks or review duplicate warnings.",
+          "No tasks could be extracted. Try writing " + "one action per line.",
         );
       }
+    } catch (cause) {
+      console.error("FlowMind: task extraction failed", cause);
+
+      setError(
+        "Could not analyze your text. " +
+          "Check the local AI service and try again.",
+      );
     } finally {
-      savingRef.current = false;
+      setLoading(false);
     }
   }
 
+  function getProjectName(projectId: string): string {
+    return (
+      projects.find((project) => project.id === projectId)?.name ?? "No Project"
+    );
+  }
+
+  function duplicateInfo(task: ReviewTask) {
+    const matches = findTaskDuplicates(
+      {
+        title: task.title,
+        projectId: task.projectId || undefined,
+        dueDate: task.dueDate || undefined,
+      },
+      tasks,
+    );
+
+    const exact = matches.filter((match) => match.level === "exact");
+
+    const similar = matches.filter((match) => match.level === "similar");
+
+    const batchMatches = reviewTasks.filter(
+      (other) =>
+        other.id !== task.id &&
+        other.selected &&
+        normalizedTitle(other.title) === normalizedTitle(task.title) &&
+        other.projectId === task.projectId,
+    );
+
+    const sameDateInBatch = batchMatches.some(
+      (other) => (other.dueDate || "") === (task.dueDate || ""),
+    );
+
+    const level =
+      exact.length > 0 || sameDateInBatch
+        ? "exact"
+        : similar.length > 0 || batchMatches.length > 0
+          ? "similar"
+          : null;
+
+    return {
+      level,
+      matches,
+      batchMatches,
+    };
+  }
+
+  const reviewSummary = useMemo(() => {
+    let exact = 0;
+    let similar = 0;
+
+    for (const task of reviewTasks) {
+      if (!task.selected) {
+        continue;
+      }
+
+      const matches = findTaskDuplicates(
+        {
+          title: task.title,
+          projectId: task.projectId || undefined,
+          dueDate: task.dueDate || undefined,
+        },
+        tasks,
+      );
+
+      const otherMatches = reviewTasks.filter(
+        (other) =>
+          other.id !== task.id &&
+          other.selected &&
+          normalizedTitle(other.title) === normalizedTitle(task.title) &&
+          other.projectId === task.projectId,
+      );
+
+      const hasExact =
+        matches.some((match) => match.level === "exact") ||
+        otherMatches.some(
+          (other) => (other.dueDate || "") === (task.dueDate || ""),
+        );
+
+      const hasSimilar =
+        matches.some((match) => match.level === "similar") ||
+        otherMatches.length > 0;
+
+      if (hasExact) {
+        exact++;
+      } else if (hasSimilar) {
+        similar++;
+      }
+    }
+
+    return { exact, similar };
+  }, [reviewTasks, tasks]);
+
   function selectAll() {
-    setSuggestions((previous) =>
+    setReviewTasks((previous) =>
       previous.map((task) => ({
         ...task,
         selected: true,
@@ -250,7 +268,7 @@ function AIAssistant({
   }
 
   function deselectAll() {
-    setSuggestions((previous) =>
+    setReviewTasks((previous) =>
       previous.map((task) => ({
         ...task,
         selected: false,
@@ -258,600 +276,485 @@ function AIAssistant({
     );
   }
 
-  const fieldStyle = {
-    width: "100%",
-    padding: "12px 14px",
-    background: "#12141d",
-    border: "1px solid #383b4d",
-    borderRadius: "10px",
-    color: "#f8fafc",
-    fontFamily: "inherit",
-    fontSize: "14px",
-    boxSizing: "border-box" as const,
-  };
+  function saveSelectedTasks() {
+    const selected = reviewTasks.filter(
+      (task) => task.selected && task.title.trim().length > 0,
+    );
 
-  const buttonStyle = {
-    border: "none",
-    borderRadius: "10px",
-    padding: "11px 16px",
-    cursor: "pointer",
-    fontFamily: "inherit",
-    fontWeight: 600,
-  };
+    if (selected.length === 0) {
+      setError("Select at least one task to save.");
+      return;
+    }
+
+    const accepted: ReviewTask[] = [];
+    const skipped: ReviewTask[] = [];
+
+    for (const task of selected) {
+      const existingMatches = findTaskDuplicates(
+        {
+          title: task.title,
+          projectId: task.projectId || undefined,
+          dueDate: task.dueDate || undefined,
+        },
+        tasks,
+      );
+
+      const matchesAccepted = accepted.some(
+        (other) =>
+          normalizedTitle(other.title) === normalizedTitle(task.title) &&
+          other.projectId === task.projectId,
+      );
+
+      const isDuplicate = existingMatches.length > 0 || matchesAccepted;
+
+      if (isDuplicate && !task.allowDuplicate) {
+        skipped.push(task);
+        continue;
+      }
+
+      accepted.push(task);
+    }
+
+    if (accepted.length === 0) {
+      setError(
+        "No tasks were saved. Review the " +
+          "duplicate warnings or allow specific duplicates.",
+      );
+      return;
+    }
+
+    for (const task of accepted) {
+      onCreateTask({
+        title: task.title.trim(),
+        priority: task.priority,
+        dueDate: task.dueDate || "",
+        projectId: task.projectId || "",
+      });
+    }
+
+    const savedIds = new Set(accepted.map((task) => task.id));
+
+    setReviewTasks((previous) =>
+      previous.filter((task) => !savedIds.has(task.id)),
+    );
+
+    setSuccessCount(accepted.length);
+
+    if (skipped.length > 0) {
+      setError(
+        `${skipped.length} possible duplicate(s) ` +
+          "were left in the review list.",
+      );
+    } else {
+      setError("");
+    }
+  }
+
+  function addManualReviewTask() {
+    const task: ReviewTask = {
+      id: crypto.randomUUID(),
+      title: "",
+      priority: "medium",
+      dueDate: "",
+      projectId: "",
+      selected: true,
+      sourceText: "",
+      origin: "fallback",
+      allowDuplicate: false,
+    };
+
+    setReviewTasks((previous) => [...previous, task]);
+
+    setHasAnalyzed(true);
+    setSuccessCount(0);
+  }
 
   return (
-    <div
-      className="fm-ai"
-      style={{
-        width: "100%",
-        minWidth: 0,
-        color: "#f8fafc",
-      }}
-    >
-      <header style={{ marginBottom: 30 }}>
-        <p
-          style={{
-            color: "#a78bfa",
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: 2,
-          }}
-        >
-          YOUR LOCAL AI WORKSPACE
-        </p>
+    <div className="fm-ai">
+      <header className="fm-ai-header">
+        <p className="fm-ai-eyebrow">SMART TASK CAPTURE</p>
 
-        <h1 style={{ fontSize: 34, margin: "0 0 12px" }}>AI Assistant ✨</h1>
+        <h1>AI Assistant ✨</h1>
 
-        <p
-          style={{
-            color: "#989eae",
-            lineHeight: 1.6,
-          }}
-        >
-          Turn your notes into organized tasks with automatic deadlines, project
-          assignment, and duplicate detection.
+        <p className="fm-ai-description">
+          Turn your notes, ideas and task lists into organized, actionable
+          tasks.
         </p>
       </header>
 
-      <section
-        style={{
-          background: "#1b1d28",
-          border: "1px solid #2d3040",
-          borderRadius: 18,
-          padding: 24,
-          marginBottom: 24,
-        }}
-      >
-        <h2 style={{ fontSize: 20, marginTop: 0 }}>Analyze Your Notes</h2>
-
-        <textarea
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder={
-            "Paste your notes here...\n\n" +
-            "Mazu Beach:\n" +
-            "Утре да монтирам новия рийл.\n\n" +
-            "Юлия Салакина:\n" +
-            "В петък да изпратя имейл до брандовете."
-          }
-          rows={9}
-          style={{
-            ...fieldStyle,
-            resize: "vertical",
-            lineHeight: 1.7,
-          }}
-        />
-
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-            marginTop: 16,
-          }}
-        >
+      <section className="fm-ai-panel">
+        <div className="fm-ai-tabs" role="group" aria-label="Task capture mode">
           <button
             type="button"
-            onClick={analyzeNote}
-            disabled={analyzing || !note.trim()}
-            style={{
-              ...buttonStyle,
-              background: "#8b5cf6",
-              color: "#fff",
-              opacity: analyzing || !note.trim() ? 0.6 : 1,
-            }}
+            className={mode === "quick" ? "active" : ""}
+            aria-pressed={mode === "quick"}
+            onClick={() => changeMode("quick")}
           >
-            {analyzing ? "Analyzing..." : "✨ Analyze Notes"}
+            📥 Smart Task Inbox
           </button>
 
-          <span
-            style={{
-              color: "#989eae",
-              fontSize: 12,
-            }}
+          <button
+            type="button"
+            className={mode === "assistant" ? "active" : ""}
+            aria-pressed={mode === "assistant"}
+            onClick={() => changeMode("assistant")}
           >
-            Powered locally by Ollama
+            ✨ AI Assistant
+          </button>
+        </div>
+
+        <div className="fm-ai-panel-heading">
+          <div>
+            <h2>{mode === "quick" ? "Quick Capture" : "Analyze Your Notes"}</h2>
+
+            <p>
+              {mode === "quick"
+                ? "Paste multiple tasks at once. One task per line works best."
+                : "Describe your work naturally and let local AI extract the actions."}
+            </p>
+          </div>
+
+          <span className="fm-ai-local-badge">Local AI</span>
+        </div>
+
+        <label className="fm-ai-input-label" htmlFor="fm-ai-input">
+          {mode === "quick" ? "Your task list" : "Your notes or instructions"}
+        </label>
+
+        <textarea
+          id="fm-ai-input"
+          className="fm-ai-textarea"
+          value={input}
+          onChange={(event) => {
+            setInput(event.target.value);
+
+            if (hasAnalyzed) {
+              setHasAnalyzed(false);
+              setReviewTasks([]);
+              setSuccessCount(0);
+              setError("");
+            }
+          }}
+          rows={mode === "quick" ? 9 : 7}
+          placeholder={
+            mode === "quick"
+              ? "Write or paste tasks here...\n\nPrepare content plan for Mazu\nSend brand emails tomorrow\nEdit three reels by Friday"
+              : "Write your notes, meeting summary or work instructions..."
+          }
+          disabled={loading}
+        />
+
+        <div className="fm-ai-input-footer">
+          <span>
+            {input.trim()
+              ? `${
+                  input
+                    .trim()
+                    .split(/\r?\n/)
+                    .filter((line) => line.trim()).length
+                } non-empty line(s)`
+              : "Everything stays on your device."}
           </span>
+
+          <span>{input.length} characters</span>
+        </div>
+
+        <div className="fm-ai-actions">
+          <button
+            type="button"
+            className="fm-ai-primary"
+            disabled={loading || input.trim().length === 0}
+            onClick={analyzeTasks}
+          >
+            {loading
+              ? "Analyzing..."
+              : mode === "quick"
+                ? "✨ Organize Tasks"
+                : "✨ Extract Tasks"}
+          </button>
+
+          <button
+            type="button"
+            className="fm-ai-secondary"
+            disabled={loading}
+            onClick={useExample}
+          >
+            Use Example
+          </button>
+
+          <button
+            type="button"
+            className="fm-ai-secondary"
+            disabled={loading}
+            onClick={clearInput}
+          >
+            Clear
+          </button>
         </div>
       </section>
 
-      {error && (
-        <div
-          role="alert"
-          style={{
-            background: "#3a2530",
-            color: "#fecdd3",
-            padding: 14,
-            borderRadius: 10,
-            marginBottom: 16,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div
-          role="status"
-          style={{
-            background: "#203a32",
-            color: "#a7f3d0",
-            padding: 14,
-            borderRadius: 10,
-            marginBottom: 16,
-          }}
-        >
-          {success}
+      {loading && (
+        <div className="fm-ai-message" role="status">
+          ✨ Analyzing your text and preparing an editable task list...
         </div>
       )}
 
       {warnings.length > 0 && (
-        <section
-          style={{
-            background: "#302a21",
-            border: "1px solid #695331",
-            borderRadius: 12,
-            padding: 18,
-            marginBottom: 20,
-          }}
-        >
-          <h3 style={{ marginTop: 0, fontSize: 15 }}>⚠️ Review Warnings</h3>
+        <section className="fm-ai-warnings">
+          <h3>Analysis Notes</h3>
 
-          <ul
-            style={{
-              paddingLeft: 20,
-              color: "#fcd9a0",
-              lineHeight: 1.7,
-              fontSize: 13,
-              marginBottom: 0,
-            }}
-          >
-            {warnings.map((warning, index) => (
-              <li key={`${index}-${warning}`}>{warning}</li>
-            ))}
-          </ul>
+          {warnings.map((warning, index) => (
+            <p key={index}>{warning}</p>
+          ))}
         </section>
       )}
 
-      {suggestions.length > 0 && (
-        <section>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 12,
-              marginBottom: 20,
-            }}
-          >
-            <div>
-              <h2
-                style={{
-                  margin: "0 0 6px",
-                  fontSize: 21,
-                }}
-              >
-                Review Tasks ({suggestions.length})
-              </h2>
+      {error && (
+        <div className="fm-ai-error" role="alert">
+          {error}
+        </div>
+      )}
 
-              <p
-                style={{
-                  margin: 0,
-                  color: "#989eae",
-                  fontSize: 12,
-                }}
-              >
-                {analyzedSections} sections analyzed
-                {" · "}
-                {selectedCount} ready to save
-                {" · "}
-                {duplicateCount} possible duplicate(s)
-              </p>
+      {successCount > 0 && (
+        <div className="fm-ai-success" role="status">
+          ✓ {successCount} task(s) saved successfully.
+          <button type="button" onClick={onOpenTasks}>
+            View Tasks
+          </button>
+        </div>
+      )}
+
+      {(hasAnalyzed || reviewTasks.length > 0) && (
+        <section className="fm-ai-panel">
+          <div className="fm-ai-review-header">
+            <div>
+              <p className="fm-ai-eyebrow">REVIEW BEFORE SAVING</p>
+
+              <h2>Task Review ({reviewTasks.length})</h2>
+
+              <p>Check titles, projects, priorities and deadlines.</p>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
-                onClick={selectAll}
-                style={{
-                  ...buttonStyle,
-                  color: "#fff",
-                  background: "#343747",
-                }}
-              >
+            <span className="fm-ai-review-count">{selectedCount} selected</span>
+          </div>
+
+          {analyzedSections > 0 && (
+            <p className="fm-ai-analysis-info">
+              Analyzed {analyzedSections} section(s). You can edit every
+              suggestion.
+            </p>
+          )}
+
+          {reviewTasks.length > 0 && (
+            <div className="fm-ai-review-toolbar">
+              <button type="button" onClick={selectAll}>
                 Select All
               </button>
 
-              <button
-                type="button"
-                onClick={deselectAll}
-                style={{
-                  ...buttonStyle,
-                  color: "#fff",
-                  background: "#343747",
-                }}
-              >
+              <button type="button" onClick={deselectAll}>
                 Deselect All
               </button>
+
+              <button type="button" onClick={addManualReviewTask}>
+                + Add Task
+              </button>
             </div>
-          </div>
+          )}
 
-          {review.map(({ suggestion, duplicate }) => {
-            const exactBlocked =
-              duplicate?.level === "exact" && !suggestion.duplicateOverride;
+          {reviewSummary.exact + reviewSummary.similar > 0 && (
+            <div className="fm-ai-duplicate-summary">
+              ⚠️ Possible duplicates: {reviewSummary.exact} exact,{" "}
+              {reviewSummary.similar} similar. Review them before saving.
+            </div>
+          )}
 
-            return (
-              <article
-                key={suggestion.id}
-                style={{
-                  background: "#1b1d28",
-                  border: duplicate ? "1px solid #866633" : "1px solid #2d3040",
-                  borderRadius: 16,
-                  padding: 20,
-                  marginBottom: 16,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 12,
-                    marginBottom: 16,
-                  }}
+          <div className="fm-ai-review-list">
+            {reviewTasks.map((task, index) => {
+              const duplicate = duplicateInfo(task);
+
+              const firstMatchingTask = duplicate.matches[0]?.task;
+
+              const originalExists = firstMatchingTask
+                ? existingTaskIds.has(firstMatchingTask.id)
+                : false;
+
+              return (
+                <article
+                  key={task.id}
+                  className={`fm-ai-review-item ${
+                    task.selected ? "selected" : ""
+                  }`}
                 >
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
-                      fontSize: 13,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={suggestion.selected}
-                      onChange={(event) =>
-                        updateSuggestion(suggestion.id, {
-                          selected: event.target.checked,
-                        })
-                      }
-                    />
-                    Save this task
-                  </label>
-
-                  <span
-                    style={{
-                      fontSize: 11,
-                      background: "#302a45",
-                      color: "#d4c7ff",
-                      padding: "5px 9px",
-                      borderRadius: 7,
-                    }}
-                  >
-                    {suggestion.origin === "ai" ? "AI" : "Fallback"}
-                  </span>
-
-                  {duplicate && (
-                    <span
-                      style={{
-                        background: "#49351c",
-                        color: "#fcd9a0",
-                        fontSize: 11,
-                        padding: "5px 9px",
-                        borderRadius: 7,
-                      }}
-                    >
-                      ⚠️{" "}
-                      {duplicate.level === "exact"
-                        ? "Exact duplicate"
-                        : "Possible duplicate"}
-                    </span>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => removeSuggestion(suggestion.id)}
-                    aria-label="Remove suggestion"
-                    style={{
-                      ...buttonStyle,
-                      marginLeft: "auto",
-                      background: "#3a2530",
-                      color: "#fecdd3",
-                      padding: "8px 12px",
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    marginBottom: 16,
-                  }}
-                >
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 12,
-                      color: "#a3a8b8",
-                      marginBottom: 7,
-                    }}
-                  >
-                    Task Title
-                  </label>
-
-                  <input
-                    type="text"
-                    value={suggestion.title}
-                    maxLength={200}
-                    onChange={(event) =>
-                      updateSuggestion(suggestion.id, {
-                        title: event.target.value,
-                        duplicateOverride: false,
-                      })
-                    }
-                    style={fieldStyle}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                    gap: 12,
-                    marginBottom: 16,
-                  }}
-                >
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        color: "#a3a8b8",
-                        fontSize: 12,
-                        marginBottom: 7,
-                      }}
-                    >
-                      Project
-                    </label>
-
-                    <select
-                      value={suggestion.projectId}
-                      onChange={(event) =>
-                        updateSuggestion(suggestion.id, {
-                          projectId: event.target.value,
-                          duplicateOverride: false,
-                        })
-                      }
-                      style={fieldStyle}
-                    >
-                      <option value="">No Project</option>
-
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        color: "#a3a8b8",
-                        fontSize: 12,
-                        marginBottom: 7,
-                      }}
-                    >
-                      Due Date
-                    </label>
-
-                    <input
-                      type="date"
-                      value={suggestion.dueDate}
-                      onChange={(event) =>
-                        updateSuggestion(suggestion.id, {
-                          dueDate: event.target.value,
-                          duplicateOverride: false,
-                        })
-                      }
-                      style={fieldStyle}
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        color: "#a3a8b8",
-                        fontSize: 12,
-                        marginBottom: 7,
-                      }}
-                    >
-                      Priority
-                    </label>
-
-                    <select
-                      value={suggestion.priority}
-                      onChange={(event) =>
-                        updateSuggestion(suggestion.id, {
-                          priority: event.target.value as Priority,
-                        })
-                      }
-                      style={fieldStyle}
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#12141d",
-                    borderRadius: 10,
-                    padding: 12,
-                    marginBottom: duplicate ? 14 : 0,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#a78bfa",
-                      margin: "0 0 6px",
-                    }}
-                  >
-                    ORIGINAL NOTE
-                  </p>
-
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#a3a8b8",
-                      lineHeight: 1.6,
-                      margin: 0,
-                    }}
-                  >
-                    {suggestion.sourceText}
-                  </p>
-                </div>
-
-                {duplicate && (
-                  <div
-                    style={{
-                      background: "#302a21",
-                      border: "1px solid #695331",
-                      borderRadius: 10,
-                      padding: 14,
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: "0 0 6px",
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#fcd9a0",
-                      }}
-                    >
-                      {duplicate.level === "exact"
-                        ? "This task appears to already exist."
-                        : "A similar task already exists."}
-                    </p>
-
-                    <p
-                      style={{
-                        color: "#ddd0bb",
-                        fontSize: 13,
-                        margin: "0 0 10px",
-                      }}
-                    >
-                      Existing: {duplicate.task.title}
-                    </p>
-
-                    {exactBlocked && (
-                      <p
-                        style={{
-                          color: "#fcd9a0",
-                          fontSize: 12,
-                        }}
-                      >
-                        This exact match will be skipped unless you allow it
-                        explicitly.
-                      </p>
-                    )}
-
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 9,
-                        fontSize: 12,
-                        color: "#f8fafc",
-                      }}
-                    >
+                  <div className="fm-ai-review-item-top">
+                    <label className="fm-ai-select-task">
                       <input
                         type="checkbox"
-                        checked={suggestion.duplicateOverride}
+                        checked={task.selected}
                         onChange={(event) =>
-                          updateSuggestion(suggestion.id, {
-                            duplicateOverride: event.target.checked,
-                            selected: event.target.checked
-                              ? true
-                              : suggestion.selected,
+                          updateReviewTask(task.id, {
+                            selected: event.target.checked,
                           })
                         }
                       />
-                      Save anyway
+
+                      <span>Task {index + 1}</span>
                     </label>
+
+                    <div className="fm-ai-item-actions">
+                      <span
+                        className={`fm-ai-origin ${
+                          task.origin === "ai" ? "ai" : ""
+                        }`}
+                      >
+                        {task.origin === "ai" ? "AI" : "Fallback"}
+                      </span>
+
+                      <button
+                        type="button"
+                        className="fm-ai-remove"
+                        aria-label={`Remove task ${index + 1}`}
+                        onClick={() => removeReviewTask(task.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
-                )}
-              </article>
-            );
-          })}
 
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-              alignItems: "center",
-              marginTop: 20,
-            }}
-          >
+                  <div className="fm-ai-review-fields">
+                    <div className="fm-ai-field fm-ai-title-field">
+                      <label htmlFor={`fm-ai-title-${task.id}`}>
+                        Task Title
+                      </label>
+
+                      <input
+                        id={`fm-ai-title-${task.id}`}
+                        type="text"
+                        maxLength={200}
+                        value={task.title}
+                        onChange={(event) =>
+                          updateReviewTask(task.id, {
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="fm-ai-field">
+                      <label htmlFor={`fm-ai-project-${task.id}`}>
+                        Project
+                      </label>
+
+                      <select
+                        id={`fm-ai-project-${task.id}`}
+                        value={task.projectId}
+                        onChange={(event) =>
+                          updateReviewTask(task.id, {
+                            projectId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">No Project</option>
+
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="fm-ai-field">
+                      <label htmlFor={`fm-ai-priority-${task.id}`}>
+                        Priority
+                      </label>
+
+                      <select
+                        id={`fm-ai-priority-${task.id}`}
+                        value={task.priority}
+                        onChange={(event) =>
+                          updateReviewTask(task.id, {
+                            priority: event.target.value as Priority,
+                          })
+                        }
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+
+                    <div className="fm-ai-field">
+                      <label htmlFor={`fm-ai-date-${task.id}`}>Due Date</label>
+
+                      <input
+                        id={`fm-ai-date-${task.id}`}
+                        type="date"
+                        value={task.dueDate}
+                        onChange={(event) =>
+                          updateReviewTask(task.id, {
+                            dueDate: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {task.sourceText && (
+                    <div className="fm-ai-source">
+                      <span>Original text</span>
+                      <p>{task.sourceText}</p>
+                    </div>
+                  )}
+
+                  {duplicate.level && (
+                    <div className={`fm-ai-duplicate ${duplicate.level}`}>
+                      <strong>
+                        {duplicate.level === "exact"
+                          ? "⚠️ Exact duplicate"
+                          : "⚠️ Possible duplicate"}
+                      </strong>
+
+                      <p>
+                        {firstMatchingTask && originalExists
+                          ? `Similar existing task: "${firstMatchingTask.title}".`
+                          : duplicate.batchMatches.length > 0
+                            ? "A similar task appears elsewhere in this batch."
+                            : `A similar task already exists in ${getProjectName(task.projectId)}.`}
+                      </p>
+
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={task.allowDuplicate}
+                          onChange={(event) =>
+                            updateReviewTask(task.id, {
+                              allowDuplicate: event.target.checked,
+                            })
+                          }
+                        />
+                        Save anyway
+                      </label>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="fm-ai-review-footer">
+            <div>
+              <strong>{selectedCount} task(s) selected</strong>
+
+              <span>Duplicates are skipped unless you allow them.</span>
+            </div>
+
             <button
               type="button"
+              className="fm-ai-primary"
+              disabled={selectedCount === 0 || loading}
               onClick={saveSelectedTasks}
-              disabled={selectedCount === 0}
-              style={{
-                ...buttonStyle,
-                background: "#8b5cf6",
-                color: "#fff",
-                opacity: selectedCount === 0 ? 0.6 : 1,
-              }}
             >
-              Save Selected Tasks ({selectedCount})
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenTasks}
-              style={{
-                ...buttonStyle,
-                background: "#343747",
-                color: "#fff",
-              }}
-            >
-              View Tasks
+              ✓ Save Selected Tasks
             </button>
           </div>
         </section>
