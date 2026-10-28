@@ -119,21 +119,8 @@ function sameProject(candidate: DuplicateCandidate, existing: Task): boolean {
   return (candidate.projectId || "") === (existing.projectId || "");
 }
 
-function compatibleDate(
-  candidate: DuplicateCandidate,
-  existing: Task,
-): boolean {
-  // Different explicit deadlines usually indicate
-  // separate occurrences of a recurring task.
-  if (
-    candidate.dueDate &&
-    existing.dueDate &&
-    candidate.dueDate !== existing.dueDate
-  ) {
-    return false;
-  }
-
-  return true;
+function sameDeadline(candidate: DuplicateCandidate, existing: Task): boolean {
+  return (candidate.dueDate || "") === (existing.dueDate || "");
 }
 
 export function findTaskDuplicates(
@@ -151,15 +138,13 @@ export function findTaskDuplicates(
   const matches: DuplicateMatch[] = [];
 
   for (const task of existingTasks) {
+    // Completed tasks do not block new work.
     if (task.status === "completed") {
       continue;
     }
 
+    // Tasks from different projects are separate.
     if (!sameProject(candidate, task)) {
-      continue;
-    }
-
-    if (!compatibleDate(candidate, task)) {
       continue;
     }
 
@@ -167,12 +152,16 @@ export function findTaskDuplicates(
 
     const existingSignature = getSignature(task.title);
 
-    const isExact =
+    const titlesMatch =
       normalizedCandidate === normalizedExisting ||
       (candidateSignature.length > 0 &&
         candidateSignature === existingSignature);
 
-    if (isExact) {
+    const deadlinesMatch = sameDeadline(candidate, task);
+
+    // Same title + same project + same deadline:
+    // exact duplicate.
+    if (titlesMatch && deadlinesMatch) {
       matches.push({
         task,
         level: "exact",
@@ -182,14 +171,26 @@ export function findTaskDuplicates(
       continue;
     }
 
+    // Same title + same project + different deadline:
+    // possible duplicate, not automatically blocked.
+    if (titlesMatch && !deadlinesMatch) {
+      matches.push({
+        task,
+        level: "similar",
+        score: 0.95,
+      });
+
+      continue;
+    }
+
     const similarity = getSimilarity(candidate.title, task.title);
 
-    // Avoid marking very short and generic
-    // task descriptions as duplicates.
     const candidateWordCount = new Set(getWords(candidate.title)).size;
 
     const existingWordCount = new Set(getWords(task.title)).size;
 
+    // Only compare meaningful descriptions.
+    // Very short titles can produce false positives.
     if (
       candidateWordCount >= 2 &&
       existingWordCount >= 2 &&
