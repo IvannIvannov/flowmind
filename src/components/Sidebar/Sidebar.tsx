@@ -25,6 +25,11 @@ const NAVIGATION: NavigationItem[] = [
     icon: "☀️",
   },
   {
+    id: "inbox",
+    label: "Inbox",
+    icon: "📥",
+  },
+  {
     id: "tasks",
     label: "My Tasks",
     icon: "✅",
@@ -93,7 +98,7 @@ function Sidebar({ currentPage, onNavigate }: SidebarProps) {
           <span>Local workspace</span>
         </div>
 
-        <p className="fm-sidebar-version">FlowMind v0.11.0</p>
+        <p className="fm-sidebar-version">FlowMind v0.18.0</p>
       </div>
     </aside>
   );

@@ -6,6 +6,7 @@ import type { AssistantTaskDraft } from "./AI/AIAssistant";
 
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
+import Inbox from "./components/Inbox/Inbox";
 import MyDay from "./components/MyDay/MyDay";
 import Projects from "./components/Projects/Projects";
 import Sidebar from "./components/Sidebar/Sidebar";
@@ -21,6 +22,10 @@ import type {
   Project,
   ProjectFormState,
 } from "./types";
+
+import type { InboxItem } from "./utils/inboxStorage";
+
+import { removeInboxItem } from "./utils/inboxStorage";
 
 import {
   loadTasks,
@@ -111,7 +116,7 @@ function App() {
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  // LOCAL PERSISTENCE
+  const [pendingInboxId, setPendingInboxId] = useState<string | null>(null);
 
   useEffect(() => {
     saveTasks(tasks);
@@ -120,8 +125,6 @@ function App() {
   useEffect(() => {
     saveProjects(projects);
   }, [projects]);
-
-  // TASK FILTERING
 
   const visibleTasks = useMemo(() => {
     const { search, status, project, sort } = taskFilters;
@@ -167,8 +170,6 @@ function App() {
       });
   }, [tasks, projects, taskFilters]);
 
-  // TASK FORM
-
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
       ...previous,
@@ -185,18 +186,15 @@ function App() {
 
   function resetTaskForm() {
     setTaskForm({ ...INITIAL_TASK_FORM });
+    setPendingInboxId(null);
   }
-
-  // TASK MANAGEMENT
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = taskForm.title.trim();
 
-    if (!name) {
-      return;
-    }
+    if (!name) return;
 
     const projectId = projects.some(
       (project) => project.id === taskForm.projectId,
@@ -230,12 +228,26 @@ function App() {
       };
 
       setTasks((previous) => [newTask, ...previous]);
+
+      if (pendingInboxId) {
+        const removed = removeInboxItem(pendingInboxId);
+
+        if (!removed) {
+          window.alert(
+            "Task created, but its Inbox item " +
+              "could not be removed. You can delete " +
+              "the Inbox item manually.",
+          );
+        }
+      }
     }
 
     resetTaskForm();
   }
 
   function startEditTask(task: Task) {
+    setPendingInboxId(null);
+
     setTaskForm({
       title: task.title,
       priority: task.priority,
@@ -263,9 +275,7 @@ function App() {
   function deleteTask(task: Task) {
     const confirmed = window.confirm(`Delete task "${task.title}"?`);
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     setTasks((previous) => previous.filter((item) => item.id !== task.id));
 
@@ -274,14 +284,10 @@ function App() {
     }
   }
 
-  // AI TASK CREATION
-
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
     const name = draft.title.trim();
 
-    if (!name) {
-      return;
-    }
+    if (!name) return;
 
     const projectId = projects.some((project) => project.id === draft.projectId)
       ? draft.projectId
@@ -300,7 +306,23 @@ function App() {
     setTasks((previous) => [newTask, ...previous]);
   }
 
-  // PROJECT FORM
+  function organizeInboxItem(item: InboxItem) {
+    setPendingInboxId(item.id);
+
+    setTaskForm({
+      ...INITIAL_TASK_FORM,
+      title: item.text.slice(0, 200),
+    });
+
+    setTaskFilters((previous) => ({
+      ...previous,
+      search: "",
+      status: "all",
+      project: "all",
+    }));
+
+    setPage("tasks");
+  }
 
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
@@ -315,16 +337,12 @@ function App() {
     });
   }
 
-  // PROJECT MANAGEMENT
-
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = projectForm.name.trim().replace(/\s+/g, " ");
 
-    if (!name) {
-      return;
-    }
+    if (!name) return;
 
     const normalizedName = normalizeProjectName(name);
 
@@ -350,9 +368,9 @@ function App() {
 
     if (conflictingProject) {
       window.alert(
-        `A name or alternative name is already used ` +
-          `by "${conflictingProject.name}". ` +
-          `Please choose unique project names.`,
+        "A name or alternative name is already " +
+          `used by "${conflictingProject.name}". ` +
+          "Please choose unique project names.",
       );
 
       return;
@@ -409,9 +427,7 @@ function App() {
         "The tasks themselves will NOT be deleted.",
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     setProjects((previous) =>
       previous.filter((item) => item.id !== project.id),
@@ -456,9 +472,9 @@ function App() {
     setPage("tasks");
   }
 
-  // CALENDAR INTEGRATION
-
   function addTaskFromCalendar(date: string) {
+    setPendingInboxId(null);
+
     setTaskForm({
       ...INITIAL_TASK_FORM,
       dueDate: date,
@@ -481,8 +497,6 @@ function App() {
       startEditTask(task);
     }
   }
-
-  // APPLICATION LAYOUT
 
   return (
     <div className="app">
@@ -507,6 +521,8 @@ function App() {
             onOpenTasks={() => setPage("tasks")}
           />
         )}
+
+        {page === "inbox" && <Inbox onOrganize={organizeInboxItem} />}
 
         {page === "tasks" && (
           <Tasks

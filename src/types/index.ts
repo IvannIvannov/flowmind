@@ -7,6 +7,7 @@ export type TaskSort = "newest" | "oldest" | "priority" | "due-date";
 export type Page =
   | "dashboard"
   | "my-day"
+  | "inbox"
   | "tasks"
   | "projects"
   | "calendar"
