@@ -291,7 +291,7 @@ function App() {
       title: name,
       priority: draft.priority,
       status: "todo",
-      dueDate: draft.dueDate,
+      dueDate: draft.dueDate || undefined,
       projectId,
       createdAt: new Date().toISOString(),
     };
@@ -333,8 +333,7 @@ function App() {
 
     const candidateKeys = new Set(candidateNames.map(normalizeProjectName));
 
-    // Check that no name or alias is already
-    // used by a different project.
+    // Prevent duplicate project names and aliases.
 
     const conflictingProject = projects.find((project) => {
       if (project.id === projectForm.editingId) {
@@ -542,6 +541,7 @@ function App() {
         {page === "ai" && (
           <AIAssistant
             projects={projects}
+            tasks={tasks}
             onCreateTask={createTaskFromAssistant}
             onOpenTasks={() => setPage("tasks")}
           />

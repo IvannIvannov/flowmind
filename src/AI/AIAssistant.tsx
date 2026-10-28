@@ -1,689 +1,861 @@
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useMemo, useRef, useState } from "react";
 
-import type { Priority, Project } from "../types";
+import type { Priority, Project, Task } from "../types";
+
 import { extractTasksWithOllama } from "../services/ollama";
-import type { ExtractionResult, SuggestedTask } from "../services/ollama";
+
+import type { SuggestedTask } from "../services/ollama";
+
+import { findTaskDuplicates } from "../services/taskDuplicates";
+
+import type { DuplicateMatch } from "../services/taskDuplicates";
 
 import "./AIAssistant.css";
 
 export interface AssistantTaskDraft {
   title: string;
   priority: Priority;
-  dueDate?: string;
-  projectId?: string;
+  dueDate: string;
+  projectId: string;
 }
 
 interface AIAssistantProps {
   projects: Project[];
-  onCreateTask: (task: AssistantTaskDraft) => void;
+  tasks: Task[];
+  onCreateTask: (draft: AssistantTaskDraft) => void;
   onOpenTasks: () => void;
+}
+
+interface ReviewedTask extends SuggestedTask {
+  duplicateOverride: boolean;
+}
+
+function getBestMatch(
+  task: ReviewedTask,
+  existingTasks: Task[],
+): DuplicateMatch | null {
+  return (
+    findTaskDuplicates(
+      {
+        title: task.title,
+        projectId: task.projectId,
+        dueDate: task.dueDate,
+      },
+      existingTasks,
+    )[0] ?? null
+  );
 }
 
 function AIAssistant({
   projects,
+  tasks,
   onCreateTask,
   onOpenTasks,
 }: AIAssistantProps) {
-  const [input, setInput] = useState("");
-  const [suggestions, setSuggestions] = useState<SuggestedTask[]>([]);
-
+  const [note, setNote] = useState("");
+  const [suggestions, setSuggestions] = useState<ReviewedTask[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [reviewedWarnings, setReviewedWarnings] = useState(false);
-
   const [analyzedSections, setAnalyzedSections] = useState(0);
 
-  const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [showAllSources, setShowAllSources] = useState(true);
+  const savingRef = useRef(false);
 
-  const selectedCount = suggestions.filter(
-    (task) => task.selected && task.title.trim(),
-  ).length;
-
-  const fallbackCount = suggestions.filter(
-    (task) => task.origin === "fallback",
-  ).length;
-
-  const canSave =
-    selectedCount > 0 && (warnings.length === 0 || reviewedWarnings);
-
-  async function analyzeNote(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!input.trim() || loading) return;
-
-    setLoading(true);
-    setError("");
-    setSuccess("");
-    setSuggestions([]);
-    setWarnings([]);
-    setReviewedWarnings(false);
-    setAnalyzedSections(0);
-    setShowAllSources(true);
-
-    try {
-      const result: ExtractionResult = await extractTasksWithOllama(
-        input,
-        projects,
-      );
-
-      setSuggestions(result.tasks);
-      setWarnings(result.warnings);
-      setAnalyzedSections(result.analyzedSections);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function updateSuggestion(id: string, changes: Partial<SuggestedTask>) {
-    setSuggestions((previous) =>
-      previous.map((task) => (task.id === id ? { ...task, ...changes } : task)),
-    );
-  }
-
-  function selectAll(selected: boolean) {
-    setSuggestions((previous) =>
-      previous.map((task) => ({
-        ...task,
-        selected,
+  const review = useMemo(
+    () =>
+      suggestions.map((suggestion) => ({
+        suggestion,
+        duplicate: getBestMatch(suggestion, tasks),
       })),
+    [suggestions, tasks],
+  );
+
+  const selectedCount = review.filter(
+    ({ suggestion, duplicate }) =>
+      suggestion.selected &&
+      (!duplicate ||
+        duplicate.level !== "exact" ||
+        suggestion.duplicateOverride),
+  ).length;
+
+  const duplicateCount = review.filter(
+    ({ duplicate }) => duplicate !== null,
+  ).length;
+
+  function updateSuggestion(id: string, changes: Partial<ReviewedTask>) {
+    setSuggestions((previous) =>
+      previous.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              ...changes,
+            }
+          : task,
+      ),
     );
+
+    setSuccess("");
   }
 
   function removeSuggestion(id: string) {
     setSuggestions((previous) => previous.filter((task) => task.id !== id));
   }
 
-  function resetResults() {
-    setSuggestions([]);
-    setWarnings([]);
-    setReviewedWarnings(false);
-    setAnalyzedSections(0);
+  async function analyzeNote() {
+    if (!note.trim() || analyzing) {
+      return;
+    }
+
+    setAnalyzing(true);
     setError("");
     setSuccess("");
-    setShowAllSources(true);
+    setSuggestions([]);
+    setWarnings([]);
+    setAnalyzedSections(0);
+
+    try {
+      const result = await extractTasksWithOllama(note, projects);
+
+      const reviewedTasks: ReviewedTask[] = result.tasks.map((task) => {
+        const match = findTaskDuplicates(
+          {
+            title: task.title,
+            projectId: task.projectId,
+            dueDate: task.dueDate,
+          },
+          tasks,
+        )[0];
+
+        return {
+          ...task,
+          selected: match?.level === "exact" ? false : task.selected,
+          duplicateOverride: false,
+        };
+      });
+
+      setSuggestions(reviewedTasks);
+      setWarnings(result.warnings);
+      setAnalyzedSections(result.analyzedSections);
+
+      if (reviewedTasks.length === 0) {
+        setSuccess("No pending tasks were found in this note.");
+      }
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not analyze the note.",
+      );
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   function saveSelectedTasks() {
-    if (!canSave) return;
-
-    const selected = suggestions.filter(
-      (task) => task.selected && task.title.trim(),
-    );
-
-    for (const task of selected) {
-      onCreateTask({
-        title: task.title.trim(),
-        priority: task.priority,
-        dueDate: task.dueDate || undefined,
-        projectId: task.projectId || undefined,
-      });
+    if (savingRef.current) {
+      return;
     }
 
-    resetResults();
-    setInput("");
+    savingRef.current = true;
 
-    setSuccess(
-      `${selected.length} task${
-        selected.length === 1 ? "" : "s"
-      } added successfully!`,
+    try {
+      const existingAndNew: Task[] = [...tasks];
+      const savedIds = new Set<string>();
+      const skippedIds = new Set<string>();
+
+      for (const suggestion of suggestions) {
+        if (!suggestion.selected) {
+          continue;
+        }
+
+        const duplicate = findTaskDuplicates(
+          {
+            title: suggestion.title,
+            projectId: suggestion.projectId,
+            dueDate: suggestion.dueDate,
+          },
+          existingAndNew,
+        )[0];
+
+        if (duplicate?.level === "exact" && !suggestion.duplicateOverride) {
+          skippedIds.add(suggestion.id);
+          continue;
+        }
+
+        const title = suggestion.title.trim();
+
+        if (!title) {
+          skippedIds.add(suggestion.id);
+          continue;
+        }
+
+        const projectId = projects.some(
+          (project) => project.id === suggestion.projectId,
+        )
+          ? suggestion.projectId
+          : "";
+
+        const draft: AssistantTaskDraft = {
+          title,
+          priority: suggestion.priority,
+          dueDate: suggestion.dueDate,
+          projectId,
+        };
+
+        onCreateTask(draft);
+
+        existingAndNew.push({
+          id: crypto.randomUUID(),
+          title: draft.title,
+          priority: draft.priority,
+          dueDate: draft.dueDate || undefined,
+          projectId: draft.projectId || undefined,
+          status: "todo",
+          createdAt: new Date().toISOString(),
+        });
+
+        savedIds.add(suggestion.id);
+      }
+
+      if (savedIds.size > 0) {
+        setSuggestions((previous) =>
+          previous.filter((task) => !savedIds.has(task.id)),
+        );
+
+        setSuccess(
+          `${savedIds.size} task(s) saved successfully.` +
+            (skippedIds.size > 0
+              ? ` ${skippedIds.size} duplicate or empty task(s) skipped.`
+              : ""),
+        );
+      } else {
+        setError(
+          "No tasks were saved. Select tasks or review duplicate warnings.",
+        );
+      }
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  function selectAll() {
+    setSuggestions((previous) =>
+      previous.map((task) => ({
+        ...task,
+        selected: true,
+      })),
     );
   }
 
-  function formatDate(value: string): string {
-    if (!value) return "No deadline";
-
-    const parts = value.split("-");
-
-    if (parts.length !== 3) return value;
-
-    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  function deselectAll() {
+    setSuggestions((previous) =>
+      previous.map((task) => ({
+        ...task,
+        selected: false,
+      })),
+    );
   }
 
+  const fieldStyle = {
+    width: "100%",
+    padding: "12px 14px",
+    background: "#12141d",
+    border: "1px solid #383b4d",
+    borderRadius: "10px",
+    color: "#f8fafc",
+    fontFamily: "inherit",
+    fontSize: "14px",
+    boxSizing: "border-box" as const,
+  };
+
+  const buttonStyle = {
+    border: "none",
+    borderRadius: "10px",
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontWeight: 600,
+  };
+
   return (
-    <div className="fm-ai">
-      <header className="fm-ai-header">
-        <p className="fm-ai-eyebrow">LOCAL AI WORKSPACE</p>
+    <div
+      className="fm-ai"
+      style={{
+        width: "100%",
+        minWidth: 0,
+        color: "#f8fafc",
+      }}
+    >
+      <header style={{ marginBottom: 30 }}>
+        <p
+          style={{
+            color: "#a78bfa",
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: 2,
+          }}
+        >
+          YOUR LOCAL AI WORKSPACE
+        </p>
 
-        <h1>AI Assistant 🧠</h1>
+        <h1 style={{ fontSize: 34, margin: "0 0 12px" }}>AI Assistant ✨</h1>
 
-        <p>Turn meeting notes into organized, editable tasks with local AI.</p>
+        <p
+          style={{
+            color: "#989eae",
+            lineHeight: 1.6,
+          }}
+        >
+          Turn your notes into organized tasks with automatic deadlines, project
+          assignment, and duplicate detection.
+        </p>
       </header>
 
-      <div className="fm-ai-layout">
-        <div className="fm-ai-main">
-          <section className="fm-ai-intro">
-            <div className="fm-ai-intro-icon">✨</div>
+      <section
+        style={{
+          background: "#1b1d28",
+          border: "1px solid #2d3040",
+          borderRadius: 18,
+          padding: 24,
+          marginBottom: 24,
+        }}
+      >
+        <h2 style={{ fontSize: 20, marginTop: 0 }}>Analyze Your Notes</h2>
 
-            <h2>What's on your mind?</h2>
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder={
+            "Paste your notes here...\n\n" +
+            "Mazu Beach:\n" +
+            "Утре да монтирам новия рийл.\n\n" +
+            "Юлия Салакина:\n" +
+            "В петък да изпратя имейл до брандовете."
+          }
+          rows={9}
+          style={{
+            ...fieldStyle,
+            resize: "vertical",
+            lineHeight: 1.7,
+          }}
+        />
 
-            <p>
-              Paste your meeting notes in Bulgarian. FlowMind will identify
-              pending actions and prepare suggestions for review.
-            </p>
-          </section>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            marginTop: 16,
+          }}
+        >
+          <button
+            type="button"
+            onClick={analyzeNote}
+            disabled={analyzing || !note.trim()}
+            style={{
+              ...buttonStyle,
+              background: "#8b5cf6",
+              color: "#fff",
+              opacity: analyzing || !note.trim() ? 0.6 : 1,
+            }}
+          >
+            {analyzing ? "Analyzing..." : "✨ Analyze Notes"}
+          </button>
 
-          <form className="fm-ai-compose" onSubmit={analyzeNote}>
-            <label htmlFor="fm-ai-input">Your note</label>
+          <span
+            style={{
+              color: "#989eae",
+              fontSize: 12,
+            }}
+          >
+            Powered locally by Ollama
+          </span>
+        </div>
+      </section>
 
-            <textarea
-              id="fm-ai-input"
-              value={input}
-              onChange={(event) => {
-                setInput(event.target.value);
-                setError("");
-              }}
-              placeholder="До петък трябва да изпратя предложенията на Юлия. Следващия понеделник да подготвя списък с брандове..."
-              maxLength={5000}
-              rows={7}
-              required
-              disabled={loading}
-            />
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: "#3a2530",
+            color: "#fecdd3",
+            padding: 14,
+            borderRadius: 10,
+            marginBottom: 16,
+          }}
+        >
+          {error}
+        </div>
+      )}
 
-            <div className="fm-ai-compose-footer">
-              <span>{input.length}/5000 characters</span>
+      {success && (
+        <div
+          role="status"
+          style={{
+            background: "#203a32",
+            color: "#a7f3d0",
+            padding: 14,
+            borderRadius: 10,
+            marginBottom: 16,
+          }}
+        >
+          {success}
+        </div>
+      )}
 
-              <button
-                type="submit"
-                className="fm-ai-primary"
-                disabled={loading || !input.trim()}
-              >
-                {loading ? "Analyzing notes..." : "✨ Analyze with AI"}
-              </button>
-            </div>
+      {warnings.length > 0 && (
+        <section
+          style={{
+            background: "#302a21",
+            border: "1px solid #695331",
+            borderRadius: 12,
+            padding: 18,
+            marginBottom: 20,
+          }}
+        >
+          <h3 style={{ marginTop: 0, fontSize: 15 }}>⚠️ Review Warnings</h3>
 
-            {loading && (
-              <p
-                role="status"
+          <ul
+            style={{
+              paddingLeft: 20,
+              color: "#fcd9a0",
+              lineHeight: 1.7,
+              fontSize: 13,
+              marginBottom: 0,
+            }}
+          >
+            {warnings.map((warning, index) => (
+              <li key={`${index}-${warning}`}>{warning}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {suggestions.length > 0 && (
+        <section>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            <div>
+              <h2
                 style={{
-                  marginTop: 16,
-                  color: "#c4b5fd",
-                  fontSize: 13,
+                  margin: "0 0 6px",
+                  fontSize: 21,
                 }}
               >
-                Ollama is analyzing your notes locally...
-              </p>
-            )}
-          </form>
+                Review Tasks ({suggestions.length})
+              </h2>
 
-          {error && (
+              <p
+                style={{
+                  margin: 0,
+                  color: "#989eae",
+                  fontSize: 12,
+                }}
+              >
+                {analyzedSections} sections analyzed
+                {" · "}
+                {selectedCount} ready to save
+                {" · "}
+                {duplicateCount} possible duplicate(s)
+              </p>
+            </div>
+
             <div
-              role="alert"
-              className="fm-ai-success"
               style={{
-                background: "#3a2530",
-                borderColor: "#69313e",
-                color: "#fda4af",
+                display: "flex",
+                gap: 8,
               }}
             >
-              {error}
-            </div>
-          )}
+              <button
+                type="button"
+                onClick={selectAll}
+                style={{
+                  ...buttonStyle,
+                  color: "#fff",
+                  background: "#343747",
+                }}
+              >
+                Select All
+              </button>
 
-          {success && (
-            <div role="status" className="fm-ai-success">
-              <span>✓ {success}</span>
-
-              <button type="button" onClick={onOpenTasks}>
-                View Tasks →
+              <button
+                type="button"
+                onClick={deselectAll}
+                style={{
+                  ...buttonStyle,
+                  color: "#fff",
+                  background: "#343747",
+                }}
+              >
+                Deselect All
               </button>
             </div>
-          )}
+          </div>
 
-          {analyzedSections > 0 && (
-            <section className="fm-ai-draft">
-              <div className="fm-ai-draft-header">
-                <div>
-                  <p className="fm-ai-eyebrow">REVIEW BEFORE SAVING</p>
+          {review.map(({ suggestion, duplicate }) => {
+            const exactBlocked =
+              duplicate?.level === "exact" && !suggestion.duplicateOverride;
 
-                  <h2>{suggestions.length} Suggested Tasks</h2>
-                </div>
-
-                <span className="fm-ai-draft-status">Not saved</span>
-              </div>
-
-              <div
+            return (
+              <article
+                key={suggestion.id}
                 style={{
-                  display: "flex",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  margin: "0 0 18px",
+                  background: "#1b1d28",
+                  border: duplicate ? "1px solid #866633" : "1px solid #2d3040",
+                  borderRadius: 16,
+                  padding: 20,
+                  marginBottom: 16,
                 }}
               >
-                <span
-                  style={{
-                    color: "#c4b5fd",
-                    fontSize: 13,
-                  }}
-                >
-                  ✓ {selectedCount} selected
-                </span>
-
-                <span
-                  style={{
-                    color: "#a6abba",
-                    fontSize: 13,
-                  }}
-                >
-                  {analyzedSections} sections analyzed
-                </span>
-
-                {fallbackCount > 0 && (
-                  <span
-                    style={{
-                      color: "#f9d89a",
-                      fontSize: 13,
-                    }}
-                  >
-                    ⚠ {fallbackCount} fallback drafts
-                  </span>
-                )}
-              </div>
-
-              <p
-                style={{
-                  color: "#a6abba",
-                  fontSize: 13,
-                  lineHeight: 1.7,
-                  marginBottom: 20,
-                }}
-              >
-                Review every task and its original text before saving.
-              </p>
-
-              {warnings.length > 0 && (
                 <div
-                  role="alert"
                   style={{
-                    border: "1px solid #8a6231",
-                    background: "#332b21",
-                    borderRadius: 12,
-                    padding: 18,
-                    marginBottom: 22,
-                    color: "#f9d89a",
+                    display: "flex",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    marginBottom: 16,
                   }}
                 >
-                  <h3
-                    style={{
-                      margin: "0 0 10px",
-                      fontSize: 16,
-                    }}
-                  >
-                    ⚠ {warnings.length} Review Warning
-                    {warnings.length === 1 ? "" : "s"}
-                  </h3>
-
-                  <p
-                    style={{
-                      fontSize: 13,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    Some suggestions may need manual correction.
-                  </p>
-
-                  <ul
-                    style={{
-                      paddingLeft: 22,
-                      marginTop: 14,
-                      marginBottom: 16,
-                      fontSize: 13,
-                      lineHeight: 1.8,
-                    }}
-                  >
-                    {warnings.map((warning, index) => (
-                      <li key={index}>{warning}</li>
-                    ))}
-                  </ul>
-
                   <label
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      cursor: "pointer",
+                      alignItems: "center",
+                      gap: 9,
                       fontSize: 13,
-                      fontWeight: 600,
                     }}
                   >
                     <input
                       type="checkbox"
-                      checked={reviewedWarnings}
+                      checked={suggestion.selected}
                       onChange={(event) =>
-                        setReviewedWarnings(event.target.checked)
+                        updateSuggestion(suggestion.id, {
+                          selected: event.target.checked,
+                        })
                       }
                     />
-                    I reviewed the warnings and checked the original note.
+                    Save this task
                   </label>
-                </div>
-              )}
 
-              {suggestions.length === 0 && (
-                <div
-                  style={{
-                    padding: 20,
-                    border: "1px solid #383b4d",
-                    borderRadius: 12,
-                    background: "#242633",
-                    color: "#c3c6d2",
-                  }}
-                >
-                  No tasks were extracted. Review your original note.
-                </div>
-              )}
-
-              {suggestions.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    marginBottom: 18,
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="fm-ai-secondary"
-                    onClick={() => selectAll(true)}
-                  >
-                    Select All
-                  </button>
-
-                  <button
-                    type="button"
-                    className="fm-ai-secondary"
-                    onClick={() => selectAll(false)}
-                  >
-                    Deselect All
-                  </button>
-
-                  <button
-                    type="button"
-                    className="fm-ai-secondary"
-                    onClick={() => setShowAllSources((previous) => !previous)}
-                  >
-                    {showAllSources ? "Hide Sources" : "Show Sources"}
-                  </button>
-                </div>
-              )}
-
-              {suggestions.map((task, index) => (
-                <div
-                  key={task.id}
-                  style={{
-                    padding: 18,
-                    marginBottom: 14,
-                    border: "1px solid #383b4d",
-                    borderRadius: 12,
-                    background: "#242633",
-                    opacity: task.selected ? 1 : 0.55,
-                  }}
-                >
-                  <div
+                  <span
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                      gap: 12,
-                      marginBottom: 18,
+                      fontSize: 11,
+                      background: "#302a45",
+                      color: "#d4c7ff",
+                      padding: "5px 9px",
+                      borderRadius: 7,
                     }}
                   >
+                    {suggestion.origin === "ai" ? "AI" : "Fallback"}
+                  </span>
+
+                  {duplicate && (
+                    <span
+                      style={{
+                        background: "#49351c",
+                        color: "#fcd9a0",
+                        fontSize: 11,
+                        padding: "5px 9px",
+                        borderRadius: 7,
+                      }}
+                    >
+                      ⚠️{" "}
+                      {duplicate.level === "exact"
+                        ? "Exact duplicate"
+                        : "Possible duplicate"}
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => removeSuggestion(suggestion.id)}
+                    aria-label="Remove suggestion"
+                    style={{
+                      ...buttonStyle,
+                      marginLeft: "auto",
+                      background: "#3a2530",
+                      color: "#fecdd3",
+                      padding: "8px 12px",
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    marginBottom: 16,
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 12,
+                      color: "#a3a8b8",
+                      marginBottom: 7,
+                    }}
+                  >
+                    Task Title
+                  </label>
+
+                  <input
+                    type="text"
+                    value={suggestion.title}
+                    maxLength={200}
+                    onChange={(event) =>
+                      updateSuggestion(suggestion.id, {
+                        title: event.target.value,
+                        duplicateOverride: false,
+                      })
+                    }
+                    style={fieldStyle}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: 12,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        color: "#a3a8b8",
+                        fontSize: 12,
+                        marginBottom: 7,
+                      }}
+                    >
+                      Project
+                    </label>
+
+                    <select
+                      value={suggestion.projectId}
+                      onChange={(event) =>
+                        updateSuggestion(suggestion.id, {
+                          projectId: event.target.value,
+                          duplicateOverride: false,
+                        })
+                      }
+                      style={fieldStyle}
+                    >
+                      <option value="">No Project</option>
+
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        color: "#a3a8b8",
+                        fontSize: 12,
+                        marginBottom: 7,
+                      }}
+                    >
+                      Due Date
+                    </label>
+
+                    <input
+                      type="date"
+                      value={suggestion.dueDate}
+                      onChange={(event) =>
+                        updateSuggestion(suggestion.id, {
+                          dueDate: event.target.value,
+                          duplicateOverride: false,
+                        })
+                      }
+                      style={fieldStyle}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        color: "#a3a8b8",
+                        fontSize: 12,
+                        marginBottom: 7,
+                      }}
+                    >
+                      Priority
+                    </label>
+
+                    <select
+                      value={suggestion.priority}
+                      onChange={(event) =>
+                        updateSuggestion(suggestion.id, {
+                          priority: event.target.value as Priority,
+                        })
+                      }
+                      style={fieldStyle}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#12141d",
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: duplicate ? 14 : 0,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#a78bfa",
+                      margin: "0 0 6px",
+                    }}
+                  >
+                    ORIGINAL NOTE
+                  </p>
+
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "#a3a8b8",
+                      lineHeight: 1.6,
+                      margin: 0,
+                    }}
+                  >
+                    {suggestion.sourceText}
+                  </p>
+                </div>
+
+                {duplicate && (
+                  <div
+                    style={{
+                      background: "#302a21",
+                      border: "1px solid #695331",
+                      borderRadius: 10,
+                      padding: 14,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: "0 0 6px",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#fcd9a0",
+                      }}
+                    >
+                      {duplicate.level === "exact"
+                        ? "This task appears to already exist."
+                        : "A similar task already exists."}
+                    </p>
+
+                    <p
+                      style={{
+                        color: "#ddd0bb",
+                        fontSize: 13,
+                        margin: "0 0 10px",
+                      }}
+                    >
+                      Existing: {duplicate.task.title}
+                    </p>
+
+                    {exactBlocked && (
+                      <p
+                        style={{
+                          color: "#fcd9a0",
+                          fontSize: 12,
+                        }}
+                      >
+                        This exact match will be skipped unless you allow it
+                        explicitly.
+                      </p>
+                    )}
+
                     <label
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 10,
-                        color: "#c4b5fd",
-                        fontSize: 13,
-                        fontWeight: 600,
+                        gap: 9,
+                        fontSize: 12,
+                        color: "#f8fafc",
                       }}
                     >
                       <input
                         type="checkbox"
-                        checked={task.selected}
+                        checked={suggestion.duplicateOverride}
                         onChange={(event) =>
-                          updateSuggestion(task.id, {
-                            selected: event.target.checked,
+                          updateSuggestion(suggestion.id, {
+                            duplicateOverride: event.target.checked,
+                            selected: event.target.checked
+                              ? true
+                              : suggestion.selected,
                           })
                         }
                       />
-                      Task {index + 1} — Include
+                      Save anyway
                     </label>
-
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        padding: "6px 10px",
-                        borderRadius: 20,
-                        background:
-                          task.origin === "fallback" ? "#54401f" : "#37305b",
-                        color:
-                          task.origin === "fallback" ? "#f9d89a" : "#c4b5fd",
-                      }}
-                    >
-                      {task.origin === "fallback"
-                        ? "⚠ Needs review"
-                        : "✨ AI extracted"}
-                    </span>
                   </div>
+                )}
+              </article>
+            );
+          })}
 
-                  {showAllSources && (
-                    <div
-                      style={{
-                        padding: 14,
-                        borderRadius: 10,
-                        marginBottom: 18,
-                        background: "#191b26",
-                        border: "1px solid #383b4d",
-                      }}
-                    >
-                      <p
-                        style={{
-                          color: "#a6abba",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          letterSpacing: 1,
-                          marginBottom: 8,
-                        }}
-                      >
-                        ORIGINAL NOTE
-                      </p>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              alignItems: "center",
+              marginTop: 20,
+            }}
+          >
+            <button
+              type="button"
+              onClick={saveSelectedTasks}
+              disabled={selectedCount === 0}
+              style={{
+                ...buttonStyle,
+                background: "#8b5cf6",
+                color: "#fff",
+                opacity: selectedCount === 0 ? 0.6 : 1,
+              }}
+            >
+              Save Selected Tasks ({selectedCount})
+            </button>
 
-                      <p
-                        style={{
-                          color: "#e2e3ea",
-                          fontSize: 13,
-                          lineHeight: 1.7,
-                          margin: 0,
-                          overflowWrap: "anywhere",
-                        }}
-                      >
-                        {task.sourceText}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="fm-ai-fields">
-                    <div className="fm-ai-field fm-ai-full">
-                      <label htmlFor={`fm-ai-title-${task.id}`}>
-                        Task Name
-                      </label>
-
-                      <input
-                        id={`fm-ai-title-${task.id}`}
-                        type="text"
-                        maxLength={200}
-                        value={task.title}
-                        onChange={(event) =>
-                          updateSuggestion(task.id, {
-                            title: event.target.value,
-                          })
-                        }
-                      />
-                    </div>
-
-                    <div className="fm-ai-field">
-                      <label htmlFor={`fm-ai-priority-${task.id}`}>
-                        Priority
-                      </label>
-
-                      <select
-                        id={`fm-ai-priority-${task.id}`}
-                        value={task.priority}
-                        onChange={(event) =>
-                          updateSuggestion(task.id, {
-                            priority: event.target.value as Priority,
-                          })
-                        }
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-
-                    <div className="fm-ai-field">
-                      <label htmlFor={`fm-ai-date-${task.id}`}>Due Date</label>
-
-                      <input
-                        id={`fm-ai-date-${task.id}`}
-                        type="date"
-                        value={task.dueDate}
-                        onChange={(event) =>
-                          updateSuggestion(task.id, {
-                            dueDate: event.target.value,
-                          })
-                        }
-                      />
-                    </div>
-
-                    <div className="fm-ai-field fm-ai-full">
-                      <label htmlFor={`fm-ai-project-${task.id}`}>
-                        Project
-                      </label>
-
-                      <select
-                        id={`fm-ai-project-${task.id}`}
-                        value={task.projectId}
-                        onChange={(event) =>
-                          updateSuggestion(task.id, {
-                            projectId: event.target.value,
-                          })
-                        }
-                      >
-                        <option value="">No Project</option>
-
-                        {projects.map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      marginTop: 16,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "#a6abba",
-                      }}
-                    >
-                      📅 {formatDate(task.dueDate)}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="fm-ai-secondary"
-                      onClick={() => removeSuggestion(task.id)}
-                      aria-label={`Remove task ${index + 1}`}
-                    >
-                      Remove Task
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              <div className="fm-ai-draft-actions">
-                <button
-                  type="button"
-                  className="fm-ai-primary"
-                  disabled={!canSave}
-                  onClick={saveSelectedTasks}
-                >
-                  ✓ Save Selected Tasks ({selectedCount})
-                </button>
-
-                <button
-                  type="button"
-                  className="fm-ai-secondary"
-                  onClick={resetResults}
-                >
-                  Discard
-                </button>
-              </div>
-            </section>
-          )}
-        </div>
-
-        <aside className="fm-ai-side">
-          <div className="fm-ai-info">
-            <span className="fm-ai-info-icon">🧠</span>
-
-            <h3>Powered by Ollama</h3>
-
-            <p>Model: Gemma 3 1B. Each note section is analyzed separately.</p>
-
-            <div className="fm-ai-steps">
-              <div>
-                <span>01</span>
-                <p>Paste your notes</p>
-              </div>
-              <div>
-                <span>02</span>
-                <p>Extract pending actions</p>
-              </div>
-              <div>
-                <span>03</span>
-                <p>Compare with original text</p>
-              </div>
-              <div>
-                <span>04</span>
-                <p>Confirm and save tasks</p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={onOpenTasks}
+              style={{
+                ...buttonStyle,
+                background: "#343747",
+                color: "#fff",
+              }}
+            >
+              View Tasks
+            </button>
           </div>
-
-          <div className="fm-ai-info">
-            <span className="fm-ai-info-icon">🔒</span>
-
-            <h3>Local processing</h3>
-
-            <p>AI requests use Ollama at 127.0.0.1:11434.</p>
-
-            <p className="fm-ai-info-note">
-              AI suggestions and fallback drafts require your review before
-              saving.
-            </p>
-          </div>
-        </aside>
-      </div>
+        </section>
+      )}
     </div>
   );
 }
