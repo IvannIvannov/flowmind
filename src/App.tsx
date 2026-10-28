@@ -6,6 +6,7 @@ import type { AssistantTaskDraft } from "./AI/AIAssistant";
 
 import Calendar from "./components/Calendar/Calendar";
 import Dashboard from "./components/Dashboard/Dashboard";
+import GlobalSearch from "./components/GlobalSearch/GlobalSearch";
 import Inbox from "./components/Inbox/Inbox";
 import MyDay from "./components/MyDay/MyDay";
 import Projects from "./components/Projects/Projects";
@@ -169,8 +170,6 @@ function App() {
       });
   }, [tasks, projects, taskFilters]);
 
-  // TASK FORM
-
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
       ...previous,
@@ -192,8 +191,6 @@ function App() {
 
     setPendingInboxId(null);
   }
-
-  // TASK MANAGEMENT
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -241,8 +238,7 @@ function App() {
         if (!removed) {
           window.alert(
             "Task created, but the Inbox item " +
-              "could not be removed. " +
-              "You can delete it manually.",
+              "could not be removed. You can delete it manually.",
           );
         }
       }
@@ -290,8 +286,6 @@ function App() {
     }
   }
 
-  // AI ASSISTANT
-
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
     const name = draft.title.trim();
 
@@ -314,8 +308,6 @@ function App() {
     setTasks((previous) => [newTask, ...previous]);
   }
 
-  // UNIVERSAL INBOX
-
   function organizeInboxItem(item: InboxItem) {
     setPendingInboxId(item.id);
 
@@ -334,8 +326,6 @@ function App() {
     setPage("tasks");
   }
 
-  // PROJECT FORM
-
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
       ...previous,
@@ -348,8 +338,6 @@ function App() {
       ...INITIAL_PROJECT_FORM,
     });
   }
-
-  // PROJECT MANAGEMENT
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -382,12 +370,10 @@ function App() {
 
     if (conflictingProject) {
       window.alert(
-        "A name or alternative name is " +
-          "already used by " +
-          `"${conflictingProject.name}". ` +
+        "A name or alternative name is already used " +
+          `by "${conflictingProject.name}". ` +
           "Please choose unique project names.",
       );
-
       return;
     }
 
@@ -487,8 +473,6 @@ function App() {
     setPage("tasks");
   }
 
-  // CALENDAR
-
   function addTaskFromCalendar(date: string) {
     setPendingInboxId(null);
 
@@ -515,13 +499,19 @@ function App() {
     }
   }
 
-  // APPLICATION
-
   return (
     <div className="app">
       <Sidebar currentPage={page} onNavigate={setPage} />
 
       <QuickAdd onOpenInbox={() => setPage("inbox")} />
+
+      <GlobalSearch
+        tasks={tasks}
+        projects={projects}
+        onOpenTask={startEditTask}
+        onOpenProject={openProjectTasks}
+        onOpenInbox={() => setPage("inbox")}
+      />
 
       <main className="content">
         {page === "dashboard" && (
