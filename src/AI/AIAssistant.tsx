@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ChangeEvent, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 
 import type { Priority, Project, Task } from "../types";
 
 import { getTodayKey, parseDateKey, toDateKey } from "../utils/dates";
 
-import { extractTasksWithOllama } from "../services/ollama";
+import { extractTasksWithOllama, isOllamaAbortError } from "../services/ollama";
 
 import type { SuggestedTask } from "../services/ollama";
 
@@ -148,15 +148,7 @@ function makeReviewTask(task: SuggestedTask): ReviewTask {
   };
 }
 
-/* CUSTOM SELECT */
-
-interface CustomSelectProps {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  label: string;
-  priority?: boolean;
-}
+/* CUSTOM PROJECT / PRIORITY DROPDOWN */
 
 function CustomSelect({
   value,
@@ -164,14 +156,19 @@ function CustomSelect({
   onChange,
   label,
   priority = false,
-}: CustomSelectProps) {
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  label: string;
+  priority?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const currentIndex = options.findIndex((option) => option.value === value);
-
-  const selected = options[currentIndex];
+  const selected = options.find((option) => option.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -185,7 +182,7 @@ function CustomSelect({
       }
     }
 
-    function handleEscape(event: globalThis.KeyboardEvent) {
+    function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
@@ -207,25 +204,6 @@ function CustomSelect({
     triggerRef.current?.focus();
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-
-      if (!options.length) return;
-
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      const index = currentIndex < 0 ? 0 : currentIndex;
-      const nextIndex = (index + direction + options.length) % options.length;
-
-      onChange(options[nextIndex].value);
-    }
-  }
-
   return (
     <div
       className={`fm-ai-custom-select ${open ? "is-open" : ""}`}
@@ -239,7 +217,15 @@ function CustomSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
-        onKeyDown={handleKeyDown}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+
+            if (!open) {
+              setOpen(true);
+            }
+          }
+        }}
       >
         <span className="fm-ai-select-value">
           {priority && (
@@ -248,6 +234,7 @@ function CustomSelect({
               aria-hidden="true"
             />
           )}
+
           <span>{selected?.label ?? "Select"}</span>
         </span>
 
@@ -255,7 +242,17 @@ function CustomSelect({
       </button>
 
       {open && (
-        <div className="fm-ai-select-menu" role="listbox" aria-label={label}>
+        <div
+          className="fm-ai-select-menu"
+          role="listbox"
+          aria-label={label}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
+        >
           {options.map((option) => (
             <button
               type="button"
@@ -287,17 +284,20 @@ function CustomSelect({
 
 /* CUSTOM DATE PICKER */
 
-interface CustomDatePickerProps {
+function CustomDatePicker({
+  value,
+  onChange,
+  label,
+}: {
   value: string;
   onChange: (value: string) => void;
   label: string;
-}
-
-function CustomDatePicker({ value, onChange, label }: CustomDatePickerProps) {
+}) {
   const [open, setOpen] = useState(false);
 
   const [viewDate, setViewDate] = useState(() => {
     const date = parseDateKey(value) ?? new Date();
+
     return new Date(date.getFullYear(), date.getMonth(), 1);
   });
 
@@ -318,7 +318,7 @@ function CustomDatePicker({ value, onChange, label }: CustomDatePickerProps) {
       }
     }
 
-    function handleEscape(event: globalThis.KeyboardEvent) {
+    function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
@@ -409,6 +409,7 @@ function CustomDatePicker({ value, onChange, label }: CustomDatePickerProps) {
       >
         <span className="fm-ai-date-value">
           <Icon name="calendar" size={15} />
+
           <span className={!value ? "is-placeholder" : ""}>{displayDate}</span>
         </span>
 
@@ -482,7 +483,7 @@ function CustomDatePicker({ value, onChange, label }: CustomDatePickerProps) {
   );
 }
 
-/* AI ASSISTANT */
+/* MAIN ASSISTANT */
 
 function AIAssistant({
   projects,
@@ -493,6 +494,7 @@ function AIAssistant({
   const [mode, setMode] = useState<CaptureMode>("quick");
 
   const [input, setInput] = useState("");
+
   const [reviewTasks, setReviewTasks] = useState<ReviewTask[]>([]);
 
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -503,10 +505,31 @@ function AIAssistant({
   const [error, setError] = useState("");
   const [successCount, setSuccessCount] = useState(0);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
 
   const [expandedSources, setExpandedSources] = useState<string[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Controls the currently active Ollama request.
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Prevents stale responses from older runs.
+  const analysisIdRef = useRef(0);
+
+  // Guard against updates after unmount.
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      analysisIdRef.current += 1;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
 
   const selectedCount = reviewTasks.filter((task) => task.selected).length;
 
@@ -550,6 +573,7 @@ function AIAssistant({
     setError("");
     setSuccessCount(0);
     setExpandedSources([]);
+    setCancelled(false);
   }
 
   function changeMode(next: CaptureMode) {
@@ -578,9 +602,37 @@ function AIAssistant({
   function handleInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setInput(event.target.value);
 
-    if (hasAnalyzed || successCount > 0 || error) {
+    if (hasAnalyzed || successCount > 0 || error || cancelled) {
       resetReview();
     }
+  }
+
+  function stopGenerating() {
+    const controller = abortControllerRef.current;
+
+    if (!controller) return;
+
+    // Invalidate the current request immediately.
+    analysisIdRef.current += 1;
+
+    abortControllerRef.current = null;
+
+    // Abort the HTTP request and section processing.
+    controller.abort();
+
+    // Return the UI to its editable state immediately.
+    setLoading(false);
+    setCancelled(true);
+    setError("");
+    setWarnings([]);
+    setReviewTasks([]);
+    setHasAnalyzed(false);
+    setAnalyzedSections(0);
+    setSuccessCount(0);
+
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
   }
 
   async function analyzeTasks() {
@@ -588,15 +640,37 @@ function AIAssistant({
 
     if (!source || loading) return;
 
+    // A new run gets a new identity.
+    const analysisId = ++analysisIdRef.current;
+
+    const controller = new AbortController();
+
+    abortControllerRef.current = controller;
+
     setLoading(true);
+    setCancelled(false);
     setError("");
     setSuccessCount(0);
     setWarnings([]);
     setReviewTasks([]);
     setHasAnalyzed(false);
+    setAnalyzedSections(0);
 
     try {
-      const result = await extractTasksWithOllama(source, projects);
+      const result = await extractTasksWithOllama(
+        source,
+        projects,
+        controller.signal,
+      );
+
+      // Ignore responses from cancelled or older runs.
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        analysisId !== analysisIdRef.current
+      ) {
+        return;
+      }
 
       const uniqueIds = new Set<string>();
 
@@ -627,13 +701,30 @@ function AIAssistant({
         );
       }
     } catch (cause) {
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        analysisId !== analysisIdRef.current
+      ) {
+        return;
+      }
+
+      if (isOllamaAbortError(cause)) {
+        setCancelled(true);
+        return;
+      }
+
       console.error("FlowMind: task extraction failed", cause);
 
       setError(
         "Could not analyze your text. Check the local AI service and try again.",
       );
     } finally {
-      setLoading(false);
+      // Only the active run may change loading state.
+      if (mountedRef.current && analysisId === analysisIdRef.current) {
+        abortControllerRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -939,6 +1030,7 @@ function AIAssistant({
           <div className="fm-ai-input-footer">
             <span>
               <Icon name="file" size={14} />
+
               {input.trim()
                 ? `${lineCount} non-empty lines`
                 : "Processed with local AI"}
@@ -963,20 +1055,38 @@ function AIAssistant({
             ) : (
               <>
                 <Icon name="sparkles" size={17} />
+
                 {mode === "quick" ? "Organize tasks" : "Extract tasks"}
+
                 <Icon name="arrow" size={16} />
               </>
             )}
           </button>
 
-          <button
-            type="button"
-            className="fm-ai-secondary"
-            disabled={loading}
-            onClick={useExample}
-          >
-            Use example
-          </button>
+          {/* STOP GENERATING */}
+
+          {loading && (
+            <button
+              type="button"
+              className="fm-ai-secondary"
+              onClick={stopGenerating}
+              aria-label="Stop generating"
+              title="Cancel analysis and edit your notes"
+            >
+              <Icon name="close" size={16} />
+              Stop generating
+            </button>
+          )}
+
+          {!loading && (
+            <button
+              type="button"
+              className="fm-ai-secondary"
+              onClick={useExample}
+            >
+              Use example
+            </button>
+          )}
 
           <button
             type="button"
@@ -989,7 +1099,7 @@ function AIAssistant({
         </div>
       </section>
 
-      {/* FEEDBACK */}
+      {/* LOADING MESSAGE */}
 
       {loading && (
         <div className="fm-ai-message" role="status">
@@ -997,6 +1107,18 @@ function AIAssistant({
           Analyzing your text and preparing an editable task list...
         </div>
       )}
+
+      {/* CANCEL MESSAGE */}
+
+      {cancelled && !loading && (
+        <div className="fm-ai-message" role="status">
+          <Icon name="info" size={17} />
+          Analysis cancelled. Your notes are preserved. You can edit them and
+          try again.
+        </div>
+      )}
+
+      {/* ANALYSIS WARNINGS */}
 
       {warnings.length > 0 && (
         <section className="fm-ai-warnings">
@@ -1022,6 +1144,7 @@ function AIAssistant({
         <div className="fm-ai-success" role="status">
           <div>
             <Icon name="check" size={18} />
+
             <span>
               {successCount} {successCount === 1 ? "task saved" : "tasks saved"}{" "}
               successfully.
@@ -1108,7 +1231,9 @@ function AIAssistant({
           {reviewTasks.length === 0 ? (
             <div className="fm-ai-review-empty">
               <Icon name="list" size={24} />
+
               <h3>No suggestions to review</h3>
+
               <p>Add a task manually or analyze another note.</p>
             </div>
           ) : (

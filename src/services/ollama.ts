@@ -3,6 +3,7 @@ import type { Priority, Project } from "../types";
 
 const OLLAMA_URL = "http://127.0.0.1:11434/api/generate";
 const MODEL_NAME = "gemma3:1b";
+const REQUEST_TIMEOUT_MS = 120000;
 
 export type SuggestionOrigin = "ai" | "fallback";
 
@@ -77,6 +78,25 @@ const DATE_PATTERN = new RegExp(
   "giu",
 );
 
+function abortError(): Error {
+  const error = new Error("Analysis cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+export function isOllamaAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message === "Analysis cancelled")
+  );
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw abortError();
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -91,7 +111,6 @@ function escapeRegex(value: string): string {
 
 function containsPhrase(text: string, phrase: string): boolean {
   const name = normalize(phrase);
-
   if (!name) return false;
 
   const pattern = new RegExp(
@@ -102,8 +121,6 @@ function containsPhrase(text: string, phrase: string): boolean {
   return pattern.test(normalize(text));
 }
 
-// Get every valid name of a project,
-// including the aliases added by the user.
 function getProjectNames(project: Project): string[] {
   const allNames = [project.name, ...(project.aliases ?? [])];
 
@@ -112,11 +129,9 @@ function getProjectNames(project: Project): string[] {
 
   for (const item of allNames) {
     const name = item.trim();
-
     if (!name) continue;
 
     const normalized = normalize(name);
-
     if (unique.has(normalized)) continue;
 
     unique.add(normalized);
@@ -127,11 +142,11 @@ function getProjectNames(project: Project): string[] {
 }
 
 function matchingProjectIds(text: string, projects: Project[]): string[] {
-  const matched = projects.filter((project) =>
-    getProjectNames(project).some((name) => containsPhrase(text, name)),
-  );
-
-  return matched.map((project) => project.id);
+  return projects
+    .filter((project) =>
+      getProjectNames(project).some((name) => containsPhrase(text, name)),
+    )
+    .map((project) => project.id);
 }
 
 function explicitProject(text: string, projects: Project[]): string {
@@ -141,9 +156,7 @@ function explicitProject(text: string, projects: Project[]): string {
 }
 
 function findProject(proposedName: unknown, projects: Project[]): string {
-  if (typeof proposedName !== "string") {
-    return "";
-  }
+  if (typeof proposedName !== "string") return "";
 
   const requested = normalize(proposedName);
 
@@ -161,24 +174,13 @@ function chooseProject(
 ): string {
   const matches = [...new Set(matchingProjectIds(section.text, projects))];
 
-  // Never assign a project if the section
-  // explicitly mentions different projects.
-  if (matches.length > 1) {
-    return "";
-  }
+  if (matches.length > 1) return "";
+  if (matches.length === 1) return matches[0];
 
-  if (matches.length === 1) {
-    return matches[0];
-  }
-
-  // Use the heading currently active
-  // in the note, if one is recognized.
   if (section.contextProjectId) {
     return section.contextProjectId;
   }
 
-  // The AI can suggest a project, but it must
-  // match an existing name or alias exactly.
   return findProject(proposedName, projects);
 }
 
@@ -208,7 +210,6 @@ function addDays(date: Date, amount: number): Date {
   const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
   result.setDate(result.getDate() + amount);
-
   return result;
 }
 
@@ -338,10 +339,7 @@ function getDeadline(
   const uniqueDates = [...new Set(dates)];
 
   if (uniqueDates.length === 0) {
-    return {
-      date: "",
-      warning: "",
-    };
+    return { date: "", warning: "" };
   }
 
   if (uniqueDates.length === 1) {
@@ -430,32 +428,24 @@ function splitClauses(sentence: string): string[] {
   let start = 0;
 
   for (const match of sentence.matchAll(separator)) {
-    if (match.index === undefined) {
-      continue;
-    }
+    if (match.index === undefined) continue;
 
     const nextStart = match.index + match[0].length;
 
     const remainder = sentence.slice(nextStart);
 
-    if (!startsWithAction(remainder)) {
-      continue;
-    }
+    if (!startsWithAction(remainder)) continue;
 
     const current = sentence.slice(start, match.index).trim();
 
-    if (current) {
-      parts.push(current);
-    }
+    if (current) parts.push(current);
 
     start = nextStart;
   }
 
   const last = sentence.slice(start).trim();
 
-  if (last) {
-    parts.push(last);
-  }
+  if (last) parts.push(last);
 
   return parts;
 }
@@ -480,8 +470,6 @@ function splitNote(note: string, projects: Project[]): NoteSection[] {
 
     if (!line) continue;
 
-    // Standalone project heading:
-    // "Mazu Beach:"
     const heading = line.match(/^(.{1,70}):$/u);
 
     if (heading) {
@@ -492,8 +480,6 @@ function splitNote(note: string, projects: Project[]): NoteSection[] {
       continue;
     }
 
-    // Inline heading:
-    // "Mazu Beach: Монтирай рийл"
     const inlineHeading = line.match(/^([^:]{1,70}):\s+(.+)$/u);
 
     if (inlineHeading) {
@@ -637,25 +623,33 @@ OUTPUT:
 `.trim();
 }
 
-async function analyzeSection(
+/*
+ * One section = one Ollama request.
+ *
+ * The parent signal can cancel the request.
+ * The timeout remains independent.
+ * The abort listener and timeout are always cleaned up.
+ */
+async function requestOllama(
   section: NoteSection,
   projects: Project[],
-  today: Date,
-): Promise<SectionResult> {
-  if (isClearlyPastInformation(section.text)) {
-    return {
-      tasks: [],
-      warnings: [],
-    };
-  }
+  parentSignal?: AbortSignal,
+): Promise<unknown[]> {
+  throwIfAborted(parentSignal);
 
-  const tasks: SuggestedTask[] = [];
-  const warnings: string[] = [];
+  const controller = new AbortController();
 
-  let modelTasks: unknown[] = [];
-  let aiFailed = false;
+  const onParentAbort = () => {
+    controller.abort();
+  };
+
+  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    throwIfAborted(parentSignal);
+
     const response = await tauriFetch(OLLAMA_URL, {
       method: "POST",
       headers: {
@@ -672,14 +666,18 @@ async function analyzeSection(
           num_predict: 350,
         },
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: controller.signal,
     });
+
+    throwIfAborted(parentSignal);
 
     if (!response.ok) {
       throw new Error(`Ollama returned HTTP ${response.status}`);
     }
 
     const data: unknown = await response.json();
+
+    throwIfAborted(parentSignal);
 
     if (!isRecord(data) || typeof data.response !== "string") {
       throw new Error("Unexpected Ollama response");
@@ -691,14 +689,55 @@ async function analyzeSection(
       throw new Error("Invalid AI task list");
     }
 
-    modelTasks = parsed.tasks;
+    return parsed.tasks;
+  } finally {
+    clearTimeout(timeout);
+
+    parentSignal?.removeEventListener("abort", onParentAbort);
+  }
+}
+
+async function analyzeSection(
+  section: NoteSection,
+  projects: Project[],
+  today: Date,
+  signal?: AbortSignal,
+): Promise<SectionResult> {
+  throwIfAborted(signal);
+
+  if (isClearlyPastInformation(section.text)) {
+    return {
+      tasks: [],
+      warnings: [],
+    };
+  }
+
+  const tasks: SuggestedTask[] = [];
+  const warnings: string[] = [];
+
+  let modelTasks: unknown[] = [];
+  let aiFailed = false;
+
+  try {
+    modelTasks = await requestOllama(section, projects, signal);
+
+    throwIfAborted(signal);
   } catch (error) {
+    // Cancellation must never produce fallback tasks.
+    if (signal?.aborted) {
+      throw abortError();
+    }
+
     console.error("Ollama section error:", error);
 
     aiFailed = true;
   }
 
+  throwIfAborted(signal);
+
   for (const item of modelTasks) {
+    throwIfAborted(signal);
+
     if (
       !isRecord(item) ||
       typeof item.title !== "string" ||
@@ -723,9 +762,9 @@ async function analyzeSection(
     }
   }
 
-  // Fallback for clear pending actions
-  // when the local model misses them.
   if (tasks.length === 0 && looksLikePendingAction(section.text)) {
+    throwIfAborted(signal);
+
     const result = makeSuggestion(
       fallbackTitle(section.text),
       section,
@@ -750,16 +789,25 @@ async function analyzeSection(
     warnings.push(`Could not analyze this section: ` + `"${section.text}".`);
   }
 
+  throwIfAborted(signal);
+
   return {
     tasks,
     warnings,
   };
 }
 
+/*
+ * Existing calls with two arguments still work.
+ * A third optional argument allows cancellation.
+ */
 export async function extractTasksWithOllama(
   input: string,
   projects: Project[],
+  signal?: AbortSignal,
 ): Promise<ExtractionResult> {
+  throwIfAborted(signal);
+
   const note = input.trim();
 
   if (!note) {
@@ -783,10 +831,18 @@ export async function extractTasksWithOllama(
   const results: SectionResult[] = [];
 
   for (const section of sections) {
-    const result = await analyzeSection(section, projects, today);
+    // Stops before processing the next section.
+    throwIfAborted(signal);
+
+    const result = await analyzeSection(section, projects, today, signal);
+
+    // Do not accept a result if cancelled.
+    throwIfAborted(signal);
 
     results.push(result);
   }
+
+  throwIfAborted(signal);
 
   return {
     tasks: results.flatMap((result) => result.tasks),
