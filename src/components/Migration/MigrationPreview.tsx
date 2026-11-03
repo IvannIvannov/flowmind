@@ -10,8 +10,8 @@ import { buildMigrationPlan } from "../../services/migrationPlan";
 
 import type {
   MigrationCloudData,
-  MigrationKind,
   MigrationPlanItem,
+  MigrationKind,
 } from "../../services/migrationPlan";
 
 import { executeWorkspaceMigration } from "../../services/migrationExecution";
@@ -23,6 +23,7 @@ import { loadCloudInbox } from "../../services/cloudInbox";
 import { loadCloudFocusHistory } from "../../services/cloudFocusHistory";
 
 import InboxImportPanel from "./InboxImportPanel";
+import FocusImportPanel from "./FocusImportPanel";
 
 import "./MigrationPreview.css";
 
@@ -75,6 +76,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+
   const [success, setSuccess] = useState<ImportResult | null>(null);
 
   const [showAll, setShowAll] = useState(true);
@@ -113,6 +115,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       if (requestId.current !== request) return;
 
       setLocal(freshLocal);
+
       setCloud({
         projects: workspace.projects,
         tasks: workspace.tasks,
@@ -121,6 +124,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       });
     } catch (cause) {
       if (requestId.current !== request) return;
+
       setError(errorText(cause));
       throw cause;
     } finally {
@@ -139,7 +143,8 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   }, [refresh]);
 
   const plan = useMemo(() => {
-    return cloud ? buildMigrationPlan(local, cloud) : null;
+    if (!cloud) return null;
+    return buildMigrationPlan(local, cloud);
   }, [local, cloud]);
 
   const allItems = useMemo<MigrationPlanItem[]>(
@@ -156,15 +161,11 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       (project: Project) => project.id === id,
     );
 
-    if (existing) return existing.id;
-
-    return decisions[id] ?? "";
+    return existing?.id ?? decisions[id] ?? "";
   }
 
   function canSelect(item: MigrationPlanItem): boolean {
-    if (!cloud || !plan || importing) {
-      return false;
-    }
+    if (!cloud || !plan || importing) return false;
 
     if (item.kind === "project") {
       return (
@@ -312,7 +313,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       selectedItems.length !== selected.length ||
       selectedItems.some((item) => !canSelect(item))
     ) {
-      setError("The selection changed. Refresh and try again.");
+      setError("Selection changed. Refresh and review again.");
       return;
     }
 
@@ -364,13 +365,12 @@ export default function MigrationPreview({ userId, onClose }: Props) {
     <section className="fm-migration" aria-label="Data migration">
       <header className="fm-migration-header">
         <div>
-          <p className="fm-migration-eyebrow">DATA SAFETY · STEP 6</p>
+          <p className="fm-migration-eyebrow">DATA SAFETY · STEP 8</p>
 
           <h2>Smart Import</h2>
 
           <p className="fm-migration-muted">
-            Import projects, tasks and Inbox notes with separate confirmation
-            steps.
+            Review and import projects, tasks, Inbox notes and Focus History.
           </p>
         </div>
 
@@ -389,21 +389,19 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         <p className="fm-migration-id">{userId}</p>
 
         <p className="fm-migration-small">
-          Original local records will not be deleted.
+          Original local records remain unchanged.
         </p>
       </div>
 
       {success && (
         <div className="fm-migration-panel" role="status">
           <h3>Workspace import completed</h3>
-
           <p>
             {success.projectsCreated} projects and {success.tasksCreated} tasks
             created.
           </p>
-
           <p className="fm-migration-small">
-            Reload the workspace to see the updated Dashboard.
+            Reload the workspace to update the Dashboard.
           </p>
         </div>
       )}
@@ -414,7 +412,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
 
       {error && (
         <div className="fm-migration-panel fm-migration-error" role="alert">
-          <strong>Migration error</strong>
+          <strong>Migration issue</strong>
           <p>{error}</p>
 
           {!importing && (
@@ -457,7 +455,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
           </div>
 
           <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">STEP 6.1</p>
+            <p className="fm-migration-eyebrow">WORKSPACE · PROJECT MAPPING</p>
 
             <h3>Project Mapping</h3>
 
@@ -468,7 +466,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                 );
 
                 const existingId = cloud.projects.find(
-                  (project) => project.id === item.sourceId,
+                  (project: Project) => project.id === item.sourceId,
                 );
 
                 const choice = projectChoice(item.sourceId);
@@ -534,7 +532,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
           </section>
 
           <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">STEP 6.2</p>
+            <p className="fm-migration-eyebrow">WORKSPACE · TASK SELECTION</p>
 
             <h3>Import projects and tasks</h3>
 
@@ -703,17 +701,15 @@ export default function MigrationPreview({ userId, onClose }: Props) {
             onImported={refresh}
           />
 
-          <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">NEXT STEP</p>
-
-            <h3>Focus History</h3>
-
-            <p className="fm-migration-muted">
-              {local.focusHistory.items.length} local session(s) found. Import
-              is not yet available because older task and project IDs must be
-              validated first.
-            </p>
-          </section>
+          <FocusImportPanel
+            userId={userId}
+            localEntries={local.focusHistory.items}
+            cloudEntries={cloud.focusHistory}
+            localTasks={local.tasks.items}
+            cloudTasks={cloud.tasks}
+            cloudProjects={cloud.projects}
+            onImported={refresh}
+          />
 
           <div className="fm-migration-actions">
             <button
