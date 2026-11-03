@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "../../lib/supabase";
 import Auth from "./Auth";
+import PrivateWorkspace from "./PrivateWorkspace";
 import "./Auth.css";
 
 type AuthState =
@@ -38,6 +39,7 @@ export default function AuthGate() {
           return;
         }
 
+        setError("");
         setAuthState({
           status: "signed-in",
           user,
@@ -64,8 +66,6 @@ export default function AuthGate() {
       }
 
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        // Avoid awaiting Supabase calls inside
-        // the authentication event callback.
         void Promise.resolve().then(() => {
           if (active) {
             void verifySession();
@@ -145,7 +145,7 @@ export default function AuthGate() {
 
   if (authState.status === "signed-out") {
     return (
-      <>
+      <div className="fm-auth-gate">
         {error && (
           <div className="fm-auth-notice fm-auth-error" role="alert">
             {error}
@@ -157,51 +157,26 @@ export default function AuthGate() {
             void handleAuthenticated();
           }}
         />
-      </>
+      </div>
     );
   }
 
   return (
-    <div className="fm-auth-page">
-      <div className="fm-auth-brand">
-        <span className="fm-auth-logo">F.</span>
-        <span>FlowMind</span>
-      </div>
-
-      <main className="fm-auth-card fm-auth-account">
-        <div className="fm-auth-heading">
-          <span className="fm-auth-eyebrow">ACCOUNT CONNECTED</span>
-
-          <h1>You're signed in.</h1>
-
-          <p>{authState.user.email ?? "Your FlowMind account"}</p>
+    <>
+      {error && (
+        <div className="fm-auth-notice fm-auth-error" role="alert">
+          {error}
         </div>
+      )}
 
-        <div className="fm-auth-account-message">
-          Your account is connected to Supabase.
-          <p>
-            We're preparing your private workspace. Your existing local tasks,
-            projects and notes have not been modified.
-          </p>
-        </div>
-
-        {error && (
-          <div className="fm-auth-notice fm-auth-error" role="alert">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="button"
-          className="fm-auth-submit"
-          disabled={signingOut}
-          onClick={handleSignOut}
-        >
-          {signingOut ? "Signing out..." : "Sign out"}
-        </button>
-      </main>
-
-      <p className="fm-auth-bottom">FlowMind · Your account is ready.</p>
-    </div>
+      <PrivateWorkspace
+        key={authState.user.id}
+        userId={authState.user.id}
+        onSignOut={() => {
+          void handleSignOut();
+        }}
+        signingOut={signingOut}
+      />
+    </>
   );
 }
