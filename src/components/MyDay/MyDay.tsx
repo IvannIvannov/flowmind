@@ -1,28 +1,37 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import type { Project, Task, TaskStatus } from "../../types";
+
 import type { FocusHistoryEntry } from "../../utils/focusHistory";
+
 import { createDayPlan, localDateKey } from "../../utils/dayPlanner";
+
+import {
+  loadCloudDayPriorities,
+  saveCloudDayPriorities,
+} from "../../services/cloudDayPriorities";
+
 import FocusTimer from "./FocusTimer";
 import FocusHistory from "./FocusHistory";
+
 import "./MyDay.css";
 
 interface MyDayProps {
   tasks: Task[];
   projects: Project[];
   userId: string;
+
   focusHistory: FocusHistoryEntry[];
   focusHistoryLoading?: boolean;
   focusHistoryError?: string;
   onFocusHistoryRefresh?: () => void;
+
   onFocusComplete: (entry: FocusHistoryEntry) => Promise<void>;
+
   onStatusChange: (id: string, status: TaskStatus) => void;
+
   onEditTask: (task: Task) => void;
   onOpenTasks: () => void;
-}
-
-interface FocusSelection {
-  dayKey: string;
-  ids: string[] | null;
 }
 
 type TaskSection = "today" | "overdue" | "completed";
@@ -32,47 +41,6 @@ const PRIORITY_SCORE = {
   medium: 2,
   low: 1,
 };
-
-function focusKey(userId: string, day: string) {
-  return `flowmind-focus-v2:${userId}:${day}`;
-}
-
-function loadSelection(userId: string, day: string): string[] | null {
-  try {
-    const raw = localStorage.getItem(focusKey(userId, day));
-
-    if (raw === null) return null;
-
-    const parsed: unknown = JSON.parse(raw);
-
-    if (!Array.isArray(parsed)) return null;
-
-    return Array.from(
-      new Set(parsed.filter((id): id is string => typeof id === "string")),
-    ).slice(0, 3);
-  } catch {
-    return null;
-  }
-}
-
-function saveSelection(
-  userId: string,
-  day: string,
-  ids: string[] | null,
-): boolean {
-  try {
-    if (ids === null) {
-      localStorage.removeItem(focusKey(userId, day));
-    } else {
-      localStorage.setItem(focusKey(userId, day), JSON.stringify(ids));
-    }
-
-    return true;
-  } catch (error) {
-    console.error("FlowMind: cannot save focus selection", error);
-    return false;
-  }
-}
 
 function prettyDate(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -98,6 +66,12 @@ function shortDueDate(date?: string): string {
   }).format(parsed);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Could not save your priorities.";
+}
+
 export default function MyDay({
   tasks,
   projects,
@@ -112,16 +86,20 @@ export default function MyDay({
   onOpenTasks,
 }: MyDayProps) {
   const [now, setNow] = useState(() => new Date());
+
   const todayKey = localDateKey(now);
 
-  const [focusSelection, setFocusSelection] = useState<FocusSelection>(() => {
-    const today = localDateKey(new Date());
+  const selectionKey = `${userId}:${todayKey}`;
 
-    return {
-      dayKey: today,
-      ids: loadSelection(userId, today),
-    };
-  });
+  const [focusIds, setFocusIds] = useState<string[] | null>(null);
+
+  const [loadedKey, setLoadedKey] = useState("");
+
+  const [loadingPriorities, setLoadingPriorities] = useState(true);
+
+  const [savingPriorities, setSavingPriorities] = useState(false);
+
+  const [priorityError, setPriorityError] = useState("");
 
   const [editingFocus, setEditingFocus] = useState(false);
 
@@ -140,23 +118,45 @@ export default function MyDay({
       setNow(new Date());
     }, 30000);
 
-    return () => {
-      window.clearInterval(interval);
-    };
+    return () => window.clearInterval(interval);
   }, []);
 
-  const focusIds =
-    focusSelection.dayKey === todayKey
-      ? focusSelection.ids
-      : loadSelection(userId, todayKey);
+  useEffect(() => {
+    let cancelled = false;
 
-  const plan = useMemo(
-    () => createDayPlan(tasks, now, focusIds),
-    // Recalculate the plan when the date
-    // or the selected focus tasks change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, todayKey, focusIds],
-  );
+    setLoadingPriorities(true);
+    setPriorityError("");
+
+    loadCloudDayPriorities(userId, todayKey)
+      .then((ids) => {
+        if (cancelled) return;
+
+        setFocusIds(ids);
+        setLoadedKey(selectionKey);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+
+        setLoadedKey("");
+        setPriorityError(errorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPriorities(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, todayKey, selectionKey]);
+
+  const prioritiesReady =
+    !loadingPriorities && loadedKey === selectionKey && !priorityError;
+
+  const selectedFocusIds = prioritiesReady ? focusIds : [];
+
+  const plan = createDayPlan(tasks, now, selectedFocusIds);
 
   const activeTasks = useMemo(() => {
     return tasks
@@ -179,11 +179,9 @@ export default function MyDay({
       });
   }, [tasks]);
 
-  const candidates = activeTasks;
-
   const visibleCandidates = showAllCandidates
-    ? candidates
-    : candidates.slice(0, 8);
+    ? activeTasks
+    : activeTasks.slice(0, 8);
 
   const focusTaskIds = new Set(plan.focus.map((task) => task.id));
 
@@ -202,30 +200,61 @@ export default function MyDay({
     );
   }
 
-  function updateFocus(ids: string[] | null) {
-    const next = ids?.slice(0, 3) ?? null;
+  const refreshPriorities = useCallback(async () => {
+    setLoadingPriorities(true);
+    setPriorityError("");
 
-    if (!saveSelection(userId, todayKey, next)) {
+    try {
+      const ids = await loadCloudDayPriorities(userId, todayKey);
+
+      setFocusIds(ids);
+      setLoadedKey(selectionKey);
+    } catch (error) {
+      setLoadedKey("");
+      setPriorityError(errorMessage(error));
+    } finally {
+      setLoadingPriorities(false);
+    }
+  }, [userId, todayKey, selectionKey]);
+
+  async function updateFocus(ids: string[] | null) {
+    if (!prioritiesReady || savingPriorities) {
       return;
     }
 
-    setFocusSelection({
-      dayKey: todayKey,
-      ids: next,
-    });
+    const next = ids === null ? null : [...new Set(ids)].slice(0, 3);
+
+    setSavingPriorities(true);
+    setPriorityError("");
+
+    try {
+      await saveCloudDayPriorities(userId, todayKey, next);
+
+      setFocusIds(next);
+      setLoadedKey(selectionKey);
+    } catch (error) {
+      setPriorityError(errorMessage(error));
+    } finally {
+      setSavingPriorities(false);
+    }
   }
 
   function togglePriority(id: string) {
+    if (!prioritiesReady || savingPriorities) {
+      return;
+    }
+
     const current = plan.focus.map((task) => task.id);
 
     if (current.includes(id)) {
-      updateFocus(current.filter((item) => item !== id));
+      void updateFocus(current.filter((item) => item !== id));
+
       return;
     }
 
     if (current.length >= 3) return;
 
-    updateFocus([...current, id]);
+    void updateFocus([...current, id]);
   }
 
   function toggleSection(id: TaskSection) {
@@ -367,12 +396,20 @@ export default function MyDay({
       </header>
 
       <div className="fm-day-timer-area">
-        <FocusTimer
-          tasks={plan.focus}
-          projects={projects}
-          userId={userId}
-          onComplete={onFocusComplete}
-        />
+        {prioritiesReady ? (
+          <FocusTimer
+            tasks={plan.focus}
+            projects={projects}
+            userId={userId}
+            onComplete={onFocusComplete}
+          />
+        ) : (
+          <div className="fm-focus-timer" role="status">
+            {loadingPriorities
+              ? "Loading your daily priorities..."
+              : "Focus priorities are unavailable."}
+          </div>
+        )}
       </div>
 
       <div className="fm-day-status-strip" aria-label="Daily overview">
@@ -402,7 +439,9 @@ export default function MyDay({
           <div className="fm-day-panel-heading">
             <div>
               <span className="fm-day-kicker">START HERE</span>
+
               <h2>Your priorities</h2>
+
               <p>Choose up to three tasks to focus on.</p>
             </div>
 
@@ -410,13 +449,34 @@ export default function MyDay({
               type="button"
               className="fm-day-quiet-button"
               aria-expanded={editingFocus}
+              disabled={!prioritiesReady}
               onClick={() => setEditingFocus((value) => !value)}
             >
               {editingFocus ? "Done" : "Customize"}
             </button>
           </div>
 
-          {plan.focus.length === 0 ? (
+          {priorityError && (
+            <div className="fm-day-priority-empty" role="alert">
+              <p>{priorityError}</p>
+
+              <button
+                type="button"
+                className="fm-day-primary-button"
+                onClick={() => {
+                  void refreshPriorities();
+                }}
+              >
+                Reload priorities
+              </button>
+            </div>
+          )}
+
+          {!prioritiesReady && !priorityError ? (
+            <div className="fm-day-priority-empty">
+              <p>Loading priorities...</p>
+            </div>
+          ) : prioritiesReady && plan.focus.length === 0 ? (
             <div className="fm-day-priority-empty">
               <p>Your focus list is empty. Choose a task to get started.</p>
 
@@ -428,7 +488,7 @@ export default function MyDay({
                 Choose priorities
               </button>
             </div>
-          ) : (
+          ) : prioritiesReady ? (
             <div className="fm-day-priority-list">
               {plan.focus.map((task, index) => (
                 <div key={task.id} className="fm-day-priority-item">
@@ -456,29 +516,35 @@ export default function MyDay({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
 
-          {editingFocus && (
+          {editingFocus && prioritiesReady && (
             <div className="fm-day-customize">
               <div className="fm-day-customize-head">
                 <div>
                   <h3>Select priorities</h3>
-                  <p>{plan.focus.length} of 3 selected</p>
+
+                  <p>
+                    {plan.focus.length} of 3 selected
+                    {savingPriorities ? " · Saving..." : ""}
+                  </p>
                 </div>
 
                 <button
                   type="button"
+                  disabled={savingPriorities}
                   onClick={() => {
-                    updateFocus(null);
-                    setEditingFocus(false);
-                    setShowAllCandidates(false);
+                    void updateFocus(null).then(() => {
+                      setEditingFocus(false);
+                      setShowAllCandidates(false);
+                    });
                   }}
                 >
                   Auto-select
                 </button>
               </div>
 
-              {candidates.length === 0 ? (
+              {activeTasks.length === 0 ? (
                 <p className="fm-day-empty">No active tasks available.</p>
               ) : (
                 <>
@@ -496,12 +562,16 @@ export default function MyDay({
                           <input
                             type="checkbox"
                             checked={selected}
-                            disabled={!selected && focusTaskIds.size >= 3}
+                            disabled={
+                              savingPriorities ||
+                              (!selected && focusTaskIds.size >= 3)
+                            }
                             onChange={() => togglePriority(task.id)}
                           />
 
                           <span>
                             <strong>{task.title}</strong>
+
                             <small>{projectName(task.projectId)}</small>
                           </span>
                         </label>
@@ -509,7 +579,7 @@ export default function MyDay({
                     })}
                   </div>
 
-                  {candidates.length > 8 && (
+                  {activeTasks.length > 8 && (
                     <button
                       type="button"
                       className="fm-day-show-more"
@@ -517,7 +587,7 @@ export default function MyDay({
                     >
                       {showAllCandidates
                         ? "Show less"
-                        : `Show all ${candidates.length} tasks`}
+                        : `Show all ${activeTasks.length} tasks`}
                     </button>
                   )}
                 </>
@@ -532,6 +602,7 @@ export default function MyDay({
               <span className="fm-day-kicker">KEEP MOVING</span>
 
               <h2>Your task lists</h2>
+
               <p>Everything else, neatly organized.</p>
             </div>
           </div>
