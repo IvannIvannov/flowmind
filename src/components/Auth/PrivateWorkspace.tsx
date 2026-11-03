@@ -27,6 +27,7 @@ import Inbox from "../Inbox/Inbox";
 import MyDay from "../MyDay/MyDay";
 import QuickAdd from "../QuickAdd/QuickAdd";
 import GlobalSearch from "../GlobalSearch/GlobalSearch";
+import MigrationPreview from "../Migration/MigrationPreview";
 
 import {
   loadWorkspace,
@@ -111,13 +112,11 @@ export default function PrivateWorkspace({
   signingOut,
 }: Props) {
   const [page, setPage] = useState<Page>("dashboard");
+  const [showMigration, setShowMigration] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
-
   const [projects, setProjects] = useState<Project[]>([]);
-
   const [inbox, setInbox] = useState<InboxItem[]>([]);
-
   const [focusHistory, setFocusHistory] = useState<FocusHistoryEntry[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -193,11 +192,13 @@ export default function PrivateWorkspace({
           setError(errorText(cause));
         }
       }),
+
       refreshInbox().catch((cause: unknown) => {
         if (mounted.current) {
           setInboxError(errorText(cause));
         }
       }),
+
       refreshFocus().catch((cause: unknown) => {
         if (mounted.current) {
           setFocusError(errorText(cause));
@@ -273,7 +274,6 @@ export default function PrivateWorkspace({
       }
 
       const batch = aiQueue.current.splice(0);
-
       setPendingAiCount(aiQueue.current.length);
 
       if (!batch.length) return;
@@ -302,7 +302,6 @@ export default function PrivateWorkspace({
     });
 
     setPendingAiCount(aiQueue.current.length);
-
     flushAiQueue();
   }
 
@@ -442,10 +441,7 @@ export default function PrivateWorkspace({
   }
 
   function resetTaskForm() {
-    setTaskForm({
-      ...INITIAL_TASK_FORM,
-    });
-
+    setTaskForm({ ...INITIAL_TASK_FORM });
     setPendingInboxId(null);
   }
 
@@ -475,34 +471,30 @@ export default function PrivateWorkspace({
           }),
         resetTaskForm,
       );
+    } else {
+      const inboxId = pendingInboxId;
 
-      return;
+      void runAction(
+        () =>
+          createCloudTask(userId, {
+            title: taskForm.title,
+            priority: taskForm.priority,
+            dueDate: taskForm.dueDate,
+            projectId,
+          }),
+        () => {
+          resetTaskForm();
+
+          if (inboxId) {
+            void removeInboxItem(inboxId).catch((cause: unknown) => {
+              setError(
+                `Task saved, but the Inbox note could not be removed: ${errorText(cause)}`,
+              );
+            });
+          }
+        },
+      );
     }
-
-    const inboxId = pendingInboxId;
-
-    void runAction(
-      () =>
-        createCloudTask(userId, {
-          title: taskForm.title,
-          priority: taskForm.priority,
-          dueDate: taskForm.dueDate,
-          projectId,
-        }),
-      () => {
-        resetTaskForm();
-
-        if (inboxId) {
-          void removeInboxItem(inboxId).catch((cause: unknown) => {
-            setError(
-              `Task saved, but the Inbox note could not be removed: ${errorText(
-                cause,
-              )}`,
-            );
-          });
-        }
-      },
-    );
   }
 
   function startEditTask(task: Task) {
@@ -526,13 +518,9 @@ export default function PrivateWorkspace({
     setPage("tasks");
   }
 
-  function changeTaskStatus(id: string, status: TaskStatus) {
-    void runAction(() =>
-      updateCloudTask(userId, id, {
-        status,
-      }),
-    );
-  }
+  const changeTaskStatus = (id: string, status: TaskStatus) => {
+    void runAction(() => updateCloudTask(userId, id, { status }));
+  };
 
   function deleteTask(task: Task) {
     if (!window.confirm(`Delete task "${task.title}"?`)) {
@@ -575,9 +563,7 @@ export default function PrivateWorkspace({
   }
 
   function resetProjectForm() {
-    setProjectForm({
-      ...INITIAL_PROJECT_FORM,
-    });
+    setProjectForm({ ...INITIAL_PROJECT_FORM });
   }
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
@@ -758,22 +744,52 @@ export default function PrivateWorkspace({
             {saving ? " · Saving..." : ""}
           </span>
 
-          <button
-            type="button"
-            onClick={onSignOut}
-            disabled={signingOut || saving || pendingAiCount > 0}
+          <div
             style={{
-              border: "1px solid var(--fm-border)",
-              borderRadius: 9,
-              padding: "9px 13px",
-              background: "var(--fm-surface)",
-              color: "var(--fm-text)",
-              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
             }}
           >
-            {signingOut ? "Signing out..." : "Sign out"}
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowMigration(true)}
+              style={{
+                border: "1px solid var(--fm-border)",
+                borderRadius: 9,
+                padding: "9px 13px",
+                background: "var(--fm-surface)",
+                color: "var(--fm-text)",
+                cursor: "pointer",
+              }}
+            >
+              Review local data
+            </button>
+
+            <button
+              type="button"
+              onClick={onSignOut}
+              disabled={signingOut || saving || pendingAiCount > 0}
+              style={{
+                border: "1px solid var(--fm-border)",
+                borderRadius: 9,
+                padding: "9px 13px",
+                background: "var(--fm-surface)",
+                color: "var(--fm-text)",
+                cursor: "pointer",
+              }}
+            >
+              {signingOut ? "Signing out..." : "Sign out"}
+            </button>
+          </div>
         </div>
+
+        {showMigration && (
+          <MigrationPreview
+            userId={userId}
+            onClose={() => setShowMigration(false)}
+          />
+        )}
 
         {error && (
           <p
