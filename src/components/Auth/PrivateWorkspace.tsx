@@ -24,12 +24,15 @@ import type {
 import {
   loadWorkspace,
   createCloudTask,
+  createCloudTasks,
   updateCloudTask,
   deleteCloudTask,
   createCloudProject,
   updateCloudProject,
   deleteCloudProject,
 } from "../../services/workspace";
+
+import type { CloudTaskInput } from "../../services/workspace";
 
 interface PrivateWorkspaceProps {
   userId: string;
@@ -105,9 +108,12 @@ export default function PrivateWorkspace({
   signingOut,
 }: PrivateWorkspaceProps) {
   const [page, setPage] = useState<Page>("dashboard");
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -118,44 +124,29 @@ export default function PrivateWorkspace({
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  const mountedRef = useRef(true);
+  const [pendingAiCount, setPendingAiCount] = useState(0);
+
+  const [failedAiTasks, setFailedAiTasks] = useState<CloudTaskInput[]>([]);
+
+  const mountedRef = useRef(false);
   const busyRef = useRef(false);
+
+  const pendingAiRef = useRef<CloudTaskInput[]>([]);
+
+  const aiFlushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
 
-    async function initialize() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const workspace = await loadWorkspace(userId);
-
-        if (!mountedRef.current) return;
-
-        setTasks(workspace.tasks);
-        setProjects(workspace.projects);
-      } catch (cause) {
-        if (!mountedRef.current) return;
-
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Could not load your workspace.",
-        );
-      } finally {
-        if (mountedRef.current) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void initialize();
-
     return () => {
       mountedRef.current = false;
+
+      if (aiFlushTimerRef.current !== null) {
+        window.clearTimeout(aiFlushTimerRef.current);
+        aiFlushTimerRef.current = null;
+      }
     };
-  }, [userId]);
+  }, []);
 
   async function refreshWorkspace() {
     const workspace = await loadWorkspace(userId);
@@ -164,13 +155,46 @@ export default function PrivateWorkspace({
 
     setTasks(workspace.tasks);
     setProjects(workspace.projects);
+    setLoaded(true);
   }
+
+  async function initialize() {
+    if (busyRef.current) return;
+
+    setLoading(true);
+    setLoaded(false);
+    setError("");
+
+    try {
+      await refreshWorkspace();
+    } catch (cause) {
+      if (!mountedRef.current) return;
+
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not load your workspace.",
+      );
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    void initialize();
+    // Only reload when the authenticated user changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   async function runAction(
     action: () => Promise<void>,
     afterSuccess?: () => void,
   ): Promise<boolean> {
-    if (busyRef.current) return false;
+    if (busyRef.current || !loaded) {
+      return false;
+    }
 
     busyRef.current = true;
     setSaving(true);
@@ -200,7 +224,78 @@ export default function PrivateWorkspace({
 
       if (mountedRef.current) {
         setSaving(false);
+
+        if (pendingAiRef.current.length > 0) {
+          scheduleAiFlush();
+        }
       }
+    }
+  }
+
+  function scheduleAiFlush() {
+    if (aiFlushTimerRef.current !== null || !mountedRef.current) {
+      return;
+    }
+
+    aiFlushTimerRef.current = window.setTimeout(() => {
+      aiFlushTimerRef.current = null;
+
+      if (!mountedRef.current) return;
+
+      if (busyRef.current) {
+        // The current action will schedule this
+        // batch again when it finishes.
+        return;
+      }
+
+      const batch = pendingAiRef.current.splice(0);
+
+      setPendingAiCount(pendingAiRef.current.length);
+
+      if (batch.length === 0) return;
+
+      void runAction(() => createCloudTasks(userId, batch)).then((success) => {
+        if (!mountedRef.current) return;
+
+        if (!success) {
+          setFailedAiTasks((previous) => [...previous, ...batch]);
+        }
+      });
+    }, 0);
+  }
+
+  function createTaskFromAssistant(draft: AssistantTaskDraft) {
+    const name = draft.title.trim();
+
+    if (!name || !loaded) return;
+
+    const projectId = projects.some((project) => project.id === draft.projectId)
+      ? draft.projectId
+      : "";
+
+    pendingAiRef.current.push({
+      id: crypto.randomUUID(),
+      title: name,
+      priority: draft.priority,
+      dueDate: draft.dueDate,
+      projectId,
+    });
+
+    setPendingAiCount(pendingAiRef.current.length);
+    scheduleAiFlush();
+  }
+
+  async function retryFailedAiTasks() {
+    if (failedAiTasks.length === 0 || busyRef.current) {
+      return;
+    }
+
+    const batch = [...failedAiTasks];
+
+    const success = await runAction(() => createCloudTasks(userId, batch));
+
+    if (success && mountedRef.current) {
+      setFailedAiTasks([]);
     }
   }
 
@@ -229,7 +324,9 @@ export default function PrivateWorkspace({
           const difference =
             PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
 
-          if (difference !== 0) return difference;
+          if (difference !== 0) {
+            return difference;
+          }
         }
 
         if (sort === "due-date") {
@@ -247,7 +344,6 @@ export default function PrivateWorkspace({
   }, [tasks, projects, taskFilters]);
 
   function navigate(next: Page) {
-    setError("");
     setPage(next);
   }
 
@@ -273,7 +369,8 @@ export default function PrivateWorkspace({
     event.preventDefault();
 
     const name = taskForm.title.trim();
-    if (!name || busyRef.current) return;
+
+    if (!name || busyRef.current || !loaded) return;
 
     const projectId = projects.some(
       (project) => project.id === taskForm.projectId,
@@ -348,24 +445,6 @@ export default function PrivateWorkspace({
     );
   }
 
-  function createTaskFromAssistant(draft: AssistantTaskDraft) {
-    const name = draft.title.trim();
-    if (!name) return;
-
-    const projectId = projects.some((project) => project.id === draft.projectId)
-      ? draft.projectId
-      : "";
-
-    void runAction(() =>
-      createCloudTask(userId, {
-        title: name,
-        priority: draft.priority,
-        dueDate: draft.dueDate,
-        projectId,
-      }),
-    );
-  }
-
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
       ...previous,
@@ -380,9 +459,11 @@ export default function PrivateWorkspace({
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (busyRef.current || !loaded) return;
+
     const name = projectForm.name.trim().replace(/\s+/g, " ");
 
-    if (!name || busyRef.current) return;
+    if (!name) return;
 
     const normalizedName = normalizeProjectName(name);
 
@@ -390,24 +471,23 @@ export default function PrivateWorkspace({
       (alias) => normalizeProjectName(alias) !== normalizedName,
     );
 
-    const candidateNames = [name, ...aliases];
-    const candidateKeys = new Set(candidateNames.map(normalizeProjectName));
+    const candidateKeys = new Set([name, ...aliases].map(normalizeProjectName));
 
-    const conflictingProject = projects.find((project) => {
+    const conflict = projects.find((project) => {
       if (project.id === projectForm.editingId) {
         return false;
       }
 
-      const existingNames = [project.name, ...(project.aliases ?? [])];
+      const names = [project.name, ...(project.aliases ?? [])];
 
-      return existingNames.some((existingName) =>
-        candidateKeys.has(normalizeProjectName(existingName)),
+      return names.some((existing) =>
+        candidateKeys.has(normalizeProjectName(existing)),
       );
     });
 
-    if (conflictingProject) {
+    if (conflict) {
       setError(
-        `A name or alternative name is already used by "${conflictingProject.name}".`,
+        `A project name or alias is already used by "${conflict.name}".`,
       );
       return;
     }
@@ -426,9 +506,11 @@ export default function PrivateWorkspace({
         () => updateCloudProject(userId, id, input),
         resetProjectForm,
       );
-    } else {
-      void runAction(() => createCloudProject(userId, input), resetProjectForm);
+
+      return;
     }
+
+    void runAction(() => createCloudProject(userId, input), resetProjectForm);
   }
 
   function startEditProject(project: Project) {
@@ -505,6 +587,8 @@ export default function PrivateWorkspace({
     if (task) startEditTask(task);
   }
 
+  const signOutDisabled = signingOut || saving || pendingAiCount > 0;
+
   return (
     <div className="app">
       <Sidebar currentPage={page} onNavigate={navigate} />
@@ -516,33 +600,38 @@ export default function PrivateWorkspace({
             alignItems: "center",
             justifyContent: "space-between",
             gap: 12,
-            marginBottom: 18,
+            marginBottom: 20,
             flexWrap: "wrap",
           }}
         >
           <span
             style={{
-              fontSize: 12,
               color: "var(--fm-muted)",
+              fontSize: 12,
             }}
           >
             Private workspace
-            {saving ? " · Saving..." : ""}
+            {saving
+              ? " · Saving..."
+              : pendingAiCount > 0
+                ? " · Preparing AI tasks..."
+                : ""}
           </span>
 
           <button
             type="button"
             onClick={onSignOut}
-            disabled={signingOut || saving}
+            disabled={signOutDisabled}
             style={{
               border: "1px solid var(--fm-border)",
               borderRadius: 9,
               padding: "9px 13px",
               background: "var(--fm-surface)",
               color: "var(--fm-text)",
-              cursor: "pointer",
+              cursor: signOutDisabled ? "not-allowed" : "pointer",
               font: "inherit",
               fontSize: 12,
+              opacity: signOutDisabled ? 0.5 : 1,
             }}
           >
             {signingOut ? "Signing out..." : "Sign out"}
@@ -553,33 +642,65 @@ export default function PrivateWorkspace({
           <div
             role="alert"
             style={{
+              padding: 15,
+              marginBottom: 18,
               border: "1px solid var(--fm-border)",
               borderLeft: "3px solid #dc2626",
               borderRadius: 10,
-              padding: 14,
+              background: "var(--fm-surface)",
+              color: "var(--fm-text)",
+              fontSize: 12,
+              lineHeight: 1.7,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {failedAiTasks.length > 0 && (
+          <div
+            style={{
+              padding: 15,
               marginBottom: 18,
+              border: "1px solid var(--fm-border)",
+              borderRadius: 10,
+              background: "var(--fm-panel)",
               color: "var(--fm-text)",
               fontSize: 12,
             }}
           >
-            {error}
+            <strong>
+              {failedAiTasks.length} AI task(s) could not be confirmed as saved.
+            </strong>
+
+            <p
+              style={{
+                color: "var(--fm-secondary)",
+                lineHeight: 1.7,
+              }}
+            >
+              Check My Tasks before retrying. If the request reached the server
+              but its response was lost, retrying may encounter duplicate IDs.
+            </p>
 
             <button
               type="button"
+              disabled={saving || !loaded}
               onClick={() => {
-                void refreshWorkspace()
-                  .then(() => setError(""))
-                  .catch((cause: unknown) => {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : "Could not reload your data.",
-                    );
-                  });
+                void retryFailedAiTasks();
               }}
-              style={{ marginLeft: 12 }}
+              style={{
+                padding: "9px 12px",
+                border: "1px solid var(--fm-border)",
+                borderRadius: 8,
+                background: "var(--fm-surface)",
+                color: "var(--fm-text)",
+                font: "inherit",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
             >
-              Retry
+              Retry saving AI tasks
             </button>
           </div>
         )}
@@ -589,11 +710,21 @@ export default function PrivateWorkspace({
             <h1>Loading your workspace...</h1>
             <p>Connecting to your private data.</p>
           </div>
-        ) : error && tasks.length === 0 && projects.length === 0 ? (
-          <div>
+        ) : !loaded ? (
+          <section>
             <h1>Unable to load your workspace</h1>
-            <p>Check your connection and retry.</p>
-          </div>
+
+            <p>Your data was not loaded. Nothing has been overwritten.</p>
+
+            <button
+              type="button"
+              onClick={() => {
+                void initialize();
+              }}
+            >
+              Retry connection
+            </button>
+          </section>
         ) : (
           <>
             {page === "dashboard" && (

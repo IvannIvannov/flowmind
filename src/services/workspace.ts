@@ -25,18 +25,16 @@ export interface CloudProjectInput {
 
 interface TaskRow {
   id: string;
-  user_id: string;
   title: string;
   priority: Priority;
   status: TaskStatus;
+  created_at: string;
   due_date: string | null;
   project_id: string | null;
-  created_at: string;
 }
 
 interface ProjectRow {
   id: string;
-  user_id: string;
   name: string;
   description: string;
   color: string;
@@ -44,10 +42,8 @@ interface ProjectRow {
   created_at: string;
 }
 
-function throwOnError(error: { message: string } | null): void {
-  if (error) {
-    throw new Error(error.message);
-  }
+function checkError(error: { message: string } | null): void {
+  if (error) throw new Error(error.message);
 }
 
 function toTask(row: TaskRow): Task {
@@ -73,8 +69,41 @@ function toProject(row: ProjectRow): Project {
   };
 }
 
+async function assertUser(expectedUserId: string): Promise<void> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  checkError(error);
+
+  if (!user || user.id !== expectedUserId) {
+    throw new Error("Your session has changed. Sign in again.");
+  }
+}
+
+function taskPayload(userId: string, input: CloudTaskInput) {
+  const title = input.title.trim();
+
+  if (!title) {
+    throw new Error("Task title is required.");
+  }
+
+  return {
+    id: input.id ?? crypto.randomUUID(),
+    user_id: userId,
+    title,
+    priority: input.priority,
+    status: input.status ?? "todo",
+    due_date: input.dueDate || null,
+    project_id: input.projectId || null,
+  };
+}
+
 export async function loadWorkspace(userId: string): Promise<WorkspaceData> {
-  const [projectsResponse, tasksResponse] = await Promise.all([
+  await assertUser(userId);
+
+  const [projectsResult, tasksResult] = await Promise.all([
     supabase
       .from("fm_projects")
       .select("*")
@@ -82,7 +111,6 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceData> {
       .order("created_at", {
         ascending: true,
       }),
-
     supabase
       .from("fm_tasks")
       .select("*")
@@ -92,31 +120,35 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceData> {
       }),
   ]);
 
-  throwOnError(projectsResponse.error);
-  throwOnError(tasksResponse.error);
+  checkError(projectsResult.error);
+  checkError(tasksResult.error);
 
   return {
-    projects: ((projectsResponse.data ?? []) as ProjectRow[]).map(toProject),
-
-    tasks: ((tasksResponse.data ?? []) as TaskRow[]).map(toTask),
+    projects: ((projectsResult.data ?? []) as ProjectRow[]).map(toProject),
+    tasks: ((tasksResult.data ?? []) as TaskRow[]).map(toTask),
   };
+}
+
+export async function createCloudTasks(
+  userId: string,
+  inputs: CloudTaskInput[],
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  await assertUser(userId);
+
+  const rows = inputs.map((input) => taskPayload(userId, input));
+
+  const { error } = await supabase.from("fm_tasks").insert(rows);
+
+  checkError(error);
 }
 
 export async function createCloudTask(
   userId: string,
   input: CloudTaskInput,
 ): Promise<void> {
-  const { error } = await supabase.from("fm_tasks").insert({
-    id: input.id ?? crypto.randomUUID(),
-    user_id: userId,
-    title: input.title.trim(),
-    priority: input.priority,
-    status: input.status ?? "todo",
-    due_date: input.dueDate || null,
-    project_id: input.projectId || null,
-  });
-
-  throwOnError(error);
+  await createCloudTasks(userId, [input]);
 }
 
 export async function updateCloudTask(
@@ -124,10 +156,18 @@ export async function updateCloudTask(
   taskId: string,
   changes: Partial<CloudTaskInput>,
 ): Promise<void> {
+  await assertUser(userId);
+
   const update: Record<string, unknown> = {};
 
   if (changes.title !== undefined) {
-    update.title = changes.title.trim();
+    const title = changes.title.trim();
+
+    if (!title) {
+      throw new Error("Task title is required.");
+    }
+
+    update.title = title;
   }
 
   if (changes.priority !== undefined) {
@@ -146,42 +186,58 @@ export async function updateCloudTask(
     update.project_id = changes.projectId || null;
   }
 
-  const { error } = await supabase
+  if (Object.keys(update).length === 0) return;
+
+  const { data, error } = await supabase
     .from("fm_tasks")
     .update(update)
     .eq("id", taskId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id");
 
-  throwOnError(error);
+  checkError(error);
+
+  if (!data?.length) {
+    throw new Error("Task not found or access denied.");
+  }
 }
 
 export async function deleteCloudTask(
   userId: string,
   taskId: string,
 ): Promise<void> {
-  const { error } = await supabase
+  await assertUser(userId);
+
+  const { data, error } = await supabase
     .from("fm_tasks")
     .delete()
     .eq("id", taskId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id");
 
-  throwOnError(error);
+  checkError(error);
+
+  if (!data?.length) {
+    throw new Error("Task not found or access denied.");
+  }
 }
 
 export async function createCloudProject(
   userId: string,
   input: CloudProjectInput,
 ): Promise<void> {
+  await assertUser(userId);
+
   const { error } = await supabase.from("fm_projects").insert({
     id: input.id ?? crypto.randomUUID(),
     user_id: userId,
     name: input.name.trim(),
-    description: input.description,
+    description: input.description.trim(),
     color: input.color,
     aliases: input.aliases,
   });
 
-  throwOnError(error);
+  checkError(error);
 }
 
 export async function updateCloudProject(
@@ -189,27 +245,32 @@ export async function updateCloudProject(
   projectId: string,
   input: CloudProjectInput,
 ): Promise<void> {
-  const { error } = await supabase
+  await assertUser(userId);
+
+  const { data, error } = await supabase
     .from("fm_projects")
     .update({
       name: input.name.trim(),
-      description: input.description,
+      description: input.description.trim(),
       color: input.color,
       aliases: input.aliases,
     })
     .eq("id", projectId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id");
 
-  throwOnError(error);
+  checkError(error);
+
+  if (!data?.length) {
+    throw new Error("Project not found or access denied.");
+  }
 }
 
 export async function deleteCloudProject(
   userId: string,
   projectId: string,
 ): Promise<void> {
-  // The database relationship intentionally
-  // prevents deleting a project that is still
-  // referenced by tasks.
+  await assertUser(userId);
 
   const { error: unlinkError } = await supabase
     .from("fm_tasks")
@@ -217,13 +278,18 @@ export async function deleteCloudProject(
     .eq("user_id", userId)
     .eq("project_id", projectId);
 
-  throwOnError(unlinkError);
+  checkError(unlinkError);
 
-  const { error: deleteError } = await supabase
+  const { data, error } = await supabase
     .from("fm_projects")
     .delete()
     .eq("id", projectId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("id");
 
-  throwOnError(deleteError);
+  checkError(error);
+
+  if (!data?.length) {
+    throw new Error("Project not found or access denied.");
+  }
 }
