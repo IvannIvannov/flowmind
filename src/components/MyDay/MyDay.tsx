@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-
 import type { Project, Task, TaskStatus } from "../../types";
-
+import type { FocusHistoryEntry } from "../../utils/focusHistory";
 import { createDayPlan, localDateKey } from "../../utils/dayPlanner";
-
 import FocusTimer from "./FocusTimer";
 import FocusHistory from "./FocusHistory";
-
 import "./MyDay.css";
 
 interface MyDayProps {
   tasks: Task[];
   projects: Project[];
+  userId: string;
+  focusHistory: FocusHistoryEntry[];
+  focusHistoryLoading?: boolean;
+  focusHistoryError?: string;
+  onFocusHistoryRefresh?: () => void;
+  onFocusComplete: (entry: FocusHistoryEntry) => Promise<void>;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onEditTask: (task: Task) => void;
   onOpenTasks: () => void;
@@ -30,13 +33,13 @@ const PRIORITY_SCORE = {
   low: 1,
 };
 
-function focusKey(day: string): string {
-  return `flowmind-focus-${day}`;
+function focusKey(userId: string, day: string) {
+  return `flowmind-focus-v2:${userId}:${day}`;
 }
 
-function loadSelection(day: string): string[] | null {
+function loadSelection(userId: string, day: string): string[] | null {
   try {
-    const raw = localStorage.getItem(focusKey(day));
+    const raw = localStorage.getItem(focusKey(userId, day));
 
     if (raw === null) return null;
 
@@ -52,18 +55,21 @@ function loadSelection(day: string): string[] | null {
   }
 }
 
-function saveSelection(day: string, ids: string[] | null): boolean {
+function saveSelection(
+  userId: string,
+  day: string,
+  ids: string[] | null,
+): boolean {
   try {
     if (ids === null) {
-      localStorage.removeItem(focusKey(day));
+      localStorage.removeItem(focusKey(userId, day));
     } else {
-      localStorage.setItem(focusKey(day), JSON.stringify(ids));
+      localStorage.setItem(focusKey(userId, day), JSON.stringify(ids));
     }
 
     return true;
   } catch (error) {
     console.error("FlowMind: cannot save focus selection", error);
-
     return false;
   }
 }
@@ -82,7 +88,9 @@ function shortDueDate(date?: string): string {
 
   const parsed = new Date(`${date}T12:00:00`);
 
-  if (Number.isNaN(parsed.getTime())) return date;
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -90,15 +98,20 @@ function shortDueDate(date?: string): string {
   }).format(parsed);
 }
 
-function MyDay({
+export default function MyDay({
   tasks,
   projects,
+  userId,
+  focusHistory,
+  focusHistoryLoading,
+  focusHistoryError,
+  onFocusHistoryRefresh,
+  onFocusComplete,
   onStatusChange,
   onEditTask,
   onOpenTasks,
 }: MyDayProps) {
   const [now, setNow] = useState(() => new Date());
-
   const todayKey = localDateKey(now);
 
   const [focusSelection, setFocusSelection] = useState<FocusSelection>(() => {
@@ -106,7 +119,7 @@ function MyDay({
 
     return {
       dayKey: today,
-      ids: loadSelection(today),
+      ids: loadSelection(userId, today),
     };
   });
 
@@ -127,16 +140,21 @@ function MyDay({
       setNow(new Date());
     }, 30000);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+    };
   }, []);
 
   const focusIds =
     focusSelection.dayKey === todayKey
       ? focusSelection.ids
-      : loadSelection(todayKey);
+      : loadSelection(userId, todayKey);
 
   const plan = useMemo(
     () => createDayPlan(tasks, now, focusIds),
+    // Recalculate the plan when the date
+    // or the selected focus tasks change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [tasks, todayKey, focusIds],
   );
 
@@ -187,7 +205,9 @@ function MyDay({
   function updateFocus(ids: string[] | null) {
     const next = ids?.slice(0, 3) ?? null;
 
-    if (!saveSelection(todayKey, next)) return;
+    if (!saveSelection(userId, todayKey, next)) {
+      return;
+    }
 
     setFocusSelection({
       dayKey: todayKey,
@@ -341,17 +361,19 @@ function MyDay({
           className="fm-day-all-tasks"
           onClick={onOpenTasks}
         >
-          All tasks <span aria-hidden="true">↗</span>
+          All tasks
+          <span aria-hidden="true">↗</span>
         </button>
       </header>
 
-      {/* 1. PRIMARY ACTION: THE TIMER */}
-
       <div className="fm-day-timer-area">
-        <FocusTimer tasks={plan.focus} />
+        <FocusTimer
+          tasks={plan.focus}
+          projects={projects}
+          userId={userId}
+          onComplete={onFocusComplete}
+        />
       </div>
-
-      {/* 2. LIGHTWEIGHT DAY SUMMARY */}
 
       <div className="fm-day-status-strip" aria-label="Daily overview">
         <div>
@@ -374,8 +396,6 @@ function MyDay({
           <span>Daily progress</span>
         </div>
       </div>
-
-      {/* 3. PRIORITIES AND REMAINING TASKS */}
 
       <div className="fm-day-workspace">
         <section className="fm-day-priorities" aria-label="Your priorities">
@@ -468,10 +488,10 @@ function MyDay({
 
                       return (
                         <label
+                          key={task.id}
                           className={`fm-day-candidate ${
                             selected ? "selected" : ""
                           }`}
-                          key={task.id}
                         >
                           <input
                             type="checkbox"
@@ -512,7 +532,6 @@ function MyDay({
               <span className="fm-day-kicker">KEEP MOVING</span>
 
               <h2>Your task lists</h2>
-
               <p>Everything else, neatly organized.</p>
             </div>
           </div>
@@ -535,13 +554,14 @@ function MyDay({
         </section>
       </div>
 
-      {/* 4. OPTIONAL HISTORY */}
-
       <div className="fm-day-history-area">
-        <FocusHistory />
+        <FocusHistory
+          entries={focusHistory}
+          loading={focusHistoryLoading}
+          error={focusHistoryError}
+          onRefresh={onFocusHistoryRefresh}
+        />
       </div>
     </div>
   );
 }
-
-export default MyDay;

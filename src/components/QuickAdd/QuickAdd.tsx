@@ -1,38 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-
-import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-
-import {
-  createInboxItems,
-  loadInbox,
-  saveInbox,
-} from "../../utils/inboxStorage";
-
-import {
-  downloadFlowMindBackup,
-  readFlowMindBackup,
-  restoreFlowMindBackup,
-} from "../../utils/backup";
-
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import "./QuickAdd.css";
 
 interface QuickAddProps {
   onOpenInbox: () => void;
+  onAddItems: (texts: string[]) => Promise<void>;
 }
 
-function QuickAdd({ onOpenInbox }: QuickAddProps) {
+function QuickAdd({ onOpenInbox, onAddItems }: QuickAddProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
-  const [restoring, setRestoring] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
   const dialogRef = useRef<HTMLDivElement>(null);
-
-  const fileRef = useRef<HTMLInputElement>(null);
-
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const itemCount = text.split(/\r?\n/).filter((line) => line.trim()).length;
@@ -133,25 +116,35 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
     };
   }, [open]);
 
-  function saveQuickAdd() {
-    const newItems = createInboxItems(text);
+  async function saveQuickAdd() {
+    if (saving) return;
 
-    if (newItems.length === 0) {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
       setError("Write at least one task or idea.");
       return;
     }
 
-    const saved = saveInbox([...newItems, ...loadInbox()]);
-
-    if (!saved) {
-      setError("Could not save your notes. Please try again.");
-      return;
-    }
-
-    setSavedCount(newItems.length);
-    setText("");
+    setSaving(true);
     setError("");
-    setOpen(false);
+
+    try {
+      await onAddItems(lines);
+
+      setSavedCount(lines.length);
+      setText("");
+      setOpen(false);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not save your notes.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleTextareaKeyDown(
@@ -159,63 +152,7 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
   ) {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      saveQuickAdd();
-    }
-  }
-
-  function handleExport() {
-    try {
-      const count = downloadFlowMindBackup();
-
-      setError("");
-
-      window.alert(
-        `Backup prepared with ${count} local data entries.\n` +
-          "Save the JSON file somewhere safe.",
-      );
-    } catch (cause) {
-      console.error("FlowMind: backup export failed", cause);
-
-      setError("Backup could not be exported.");
-    }
-  }
-
-  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    event.target.value = "";
-
-    if (!file) return;
-
-    setRestoring(true);
-    setError("");
-
-    try {
-      const backup = await readFlowMindBackup(file);
-
-      const confirmed = window.confirm(
-        "Restore FlowMind backup?\n\n" +
-          `Backup date: ${backup.exportedAt}\n` +
-          `Data entries: ${Object.keys(backup.data).length}\n\n` +
-          "This will REPLACE the current FlowMind data.\n" +
-          "Export a backup of your current data first.",
-      );
-
-      if (!confirmed) return;
-
-      restoreFlowMindBackup(backup);
-
-      // Reload so that all pages initialize from
-      // the restored local data.
-      window.location.reload();
-    } catch (cause) {
-      console.error("FlowMind: backup restore failed", cause);
-
-      setError(
-        cause instanceof Error ? cause.message : "Could not restore backup.",
-      );
-    } finally {
-      setRestoring(false);
+      void saveQuickAdd();
     }
   }
 
@@ -353,61 +290,14 @@ function QuickAdd({ onOpenInbox }: QuickAddProps) {
                 <button
                   type="button"
                   className="fm-quick-add-primary"
-                  onClick={saveQuickAdd}
-                  disabled={!text.trim()}
+                  onClick={() => {
+                    void saveQuickAdd();
+                  }}
+                  disabled={!text.trim() || saving}
                 >
                   + Save to Inbox
                 </button>
               </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: 10,
-                borderTop: "1px solid #343747",
-                paddingTop: 18,
-                marginTop: 20,
-              }}
-            >
-              <span
-                style={{
-                  flex: 1,
-                  minWidth: 140,
-                  color: "#a3a8b8",
-                  fontSize: 12,
-                }}
-              >
-                Data Backup & Restore
-              </span>
-
-              <button
-                type="button"
-                className="fm-quick-add-secondary"
-                onClick={handleExport}
-              >
-                ↓ Backup
-              </button>
-
-              <button
-                type="button"
-                className="fm-quick-add-secondary"
-                disabled={restoring}
-                onClick={() => fileRef.current?.click()}
-              >
-                ↑ Restore
-              </button>
-
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".json,application/json"
-                aria-label="Choose FlowMind backup"
-                style={{ display: "none" }}
-                onChange={handleImport}
-              />
             </div>
           </div>
         </div>

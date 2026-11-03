@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-
 import type { Project, Task } from "../../types";
-
 import type { InboxItem } from "../../utils/inboxStorage";
-
-import { INBOX_UPDATED_EVENT, loadInbox } from "../../utils/inboxStorage";
-
 import "./GlobalSearch.css";
 
 interface GlobalSearchProps {
   tasks: Task[];
   projects: Project[];
+  inbox: InboxItem[];
   onOpenTask: (task: Task) => void;
   onOpenProject: (id: string) => void;
   onOpenInbox: () => void;
@@ -42,26 +38,21 @@ function normalize(value: string): string {
 function GlobalSearch({
   tasks,
   projects,
+  inbox,
   onOpenTask,
   onOpenProject,
   onOpenInbox,
 }: GlobalSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [inbox, setInbox] = useState<InboxItem[]>(loadInbox);
-
   const [activeIndex, setActiveIndex] = useState(0);
 
   const searchRef = useRef<HTMLInputElement>(null);
-
   const triggerRef = useRef<HTMLButtonElement>(null);
-
   const dialogRef = useRef<HTMLDivElement>(null);
-
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const searchTerm = normalize(query);
-
   const results: SearchResult[] = [];
 
   if (searchTerm) {
@@ -114,7 +105,6 @@ function GlobalSearch({
         ? document.activeElement
         : null;
 
-    setInbox(loadInbox());
     setQuery("");
     setActiveIndex(0);
     setOpen(true);
@@ -160,7 +150,6 @@ function GlobalSearch({
               ? document.activeElement
               : null;
 
-          setInbox(loadInbox());
           setQuery("");
           setActiveIndex(0);
           setOpen(true);
@@ -176,21 +165,7 @@ function GlobalSearch({
   }, []);
 
   useEffect(() => {
-    function refreshInbox() {
-      setInbox(loadInbox());
-    }
-
-    window.addEventListener(INBOX_UPDATED_EVENT, refreshInbox);
-
-    return () => {
-      window.removeEventListener(INBOX_UPDATED_EVENT, refreshInbox);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
 
     searchRef.current?.focus();
 
@@ -207,9 +182,7 @@ function GlobalSearch({
           ),
         );
 
-        if (elements.length === 0) {
-          return;
-        }
+        if (elements.length === 0) return;
 
         const first = elements[0];
         const last = elements[elements.length - 1];
@@ -249,12 +222,12 @@ function GlobalSearch({
     if (event.key === "Enter" && visibleResults.length > 0) {
       event.preventDefault();
 
-      const result =
-        visibleResults[
-          Math.max(0, Math.min(activeIndex, visibleResults.length - 1))
-        ];
+      const index = Math.max(
+        0,
+        Math.min(activeIndex, visibleResults.length - 1),
+      );
 
-      selectResult(result);
+      selectResult(visibleResults[index]);
     }
   }
 
@@ -351,13 +324,13 @@ function GlobalSearch({
                 visibleResults.map((result, index) => {
                   let title = "";
                   let description = "";
-                  let icon = "";
+                  let resultIcon = "";
 
                   if (result.type === "task") {
                     const project = projectForTask(result.task);
 
                     title = result.task.title;
-                    icon = "✅";
+                    resultIcon = "✅";
 
                     description = `Task · ${project?.name ?? "No Project"} · ${
                       result.task.status === "completed"
@@ -367,11 +340,11 @@ function GlobalSearch({
                   } else if (result.type === "project") {
                     title = result.project.name;
                     description = "Project · Open project tasks";
-                    icon = "📁";
+                    resultIcon = "📁";
                   } else {
                     title = result.item.text;
                     description = "Inbox · Captured note";
-                    icon = "📥";
+                    resultIcon = "📥";
                   }
 
                   return (
@@ -385,12 +358,11 @@ function GlobalSearch({
                       onClick={() => selectResult(result)}
                     >
                       <span className="fm-global-search-result-icon">
-                        {icon}
+                        {resultIcon}
                       </span>
 
                       <span className="fm-global-search-result-content">
                         <strong>{title}</strong>
-
                         <small>{description}</small>
                       </span>
 

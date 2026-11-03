@@ -1,34 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-
 import type { InboxItem } from "../../utils/inboxStorage";
-
-import {
-  createInboxItems,
-  loadInbox,
-  saveInbox,
-} from "../../utils/inboxStorage";
-
 import "./Inbox.css";
 
 interface InboxProps {
+  items: InboxItem[];
+  loading?: boolean;
+  busy?: boolean;
+  onAddItems: (texts: string[]) => Promise<void>;
+  onUpdateItem: (id: string, text: string) => Promise<void>;
+  onDeleteItem: (id: string) => Promise<void>;
   onOrganize: (item: InboxItem) => void;
 }
 
-function Icon({
-  name,
-  size = 18,
-}: {
-  name:
-    | "plus"
-    | "search"
-    | "arrow"
-    | "edit"
-    | "trash"
-    | "inbox"
-    | "close"
-    | "check";
-  size?: number;
-}) {
+type IconName =
+  | "plus"
+  | "search"
+  | "arrow"
+  | "edit"
+  | "trash"
+  | "inbox"
+  | "close"
+  | "check";
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths = {
     plus: <path d="M12 5v14M5 12h14" />,
     search: (
@@ -78,15 +72,10 @@ function Icon({
 
 function formatCreatedAt(value: string): string {
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Captured";
-  }
+  if (Number.isNaN(date.getTime())) return "Captured";
 
   const now = new Date();
-
   const currentDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const itemDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
   const difference = Math.round(
@@ -98,13 +87,8 @@ function formatCreatedAt(value: string): string {
     minute: "2-digit",
   }).format(date);
 
-  if (difference === 0) {
-    return `Today, ${time}`;
-  }
-
-  if (difference === 1) {
-    return `Yesterday, ${time}`;
-  }
+  if (difference === 0) return `Today, ${time}`;
+  if (difference === 1) return `Yesterday, ${time}`;
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -113,9 +97,15 @@ function formatCreatedAt(value: string): string {
   }).format(date);
 }
 
-function Inbox({ onOrganize }: InboxProps) {
-  const [items, setItems] = useState<InboxItem[]>(loadInbox);
-
+export default function Inbox({
+  items,
+  loading = false,
+  busy = false,
+  onAddItems,
+  onUpdateItem,
+  onDeleteItem,
+  onOrganize,
+}: InboxProps) {
   const [input, setInput] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -123,46 +113,23 @@ function Inbox({ onOrganize }: InboxProps) {
   const [showSearch, setShowSearch] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const captureRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
+  const disabled = loading || busy || saving;
+
   useEffect(() => {
-    if (showSearch) {
-      searchRef.current?.focus();
-    }
+    if (showSearch) searchRef.current?.focus();
   }, [showSearch]);
 
   useEffect(() => {
-    if (editingId !== null) {
-      editRef.current?.focus();
-    }
+    if (editingId !== null) editRef.current?.focus();
   }, [editingId]);
 
-  useEffect(() => {
-    function refresh() {
-      setItems(loadInbox());
-    }
-
-    function onStorage(event: StorageEvent) {
-      if (event.key === "flowmind-inbox-v1" || event.key === null) {
-        refresh();
-      }
-    }
-
-    window.addEventListener("focus", refresh);
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
-  const readyCount = input
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0).length;
+  const readyCount = input.split(/\r?\n/).filter((line) => line.trim()).length;
 
   const visibleItems = items.filter((item) =>
     item.text
@@ -170,46 +137,41 @@ function Inbox({ onOrganize }: InboxProps) {
       .includes(search.toLocaleLowerCase("bg-BG").trim()),
   );
 
-  function commit(nextItems: InboxItem[]): boolean {
-    if (!saveInbox(nextItems)) {
-      setError(
-        "Could not save changes. Your previous Inbox data is unchanged.",
-      );
-      setMessage("");
-      return false;
-    }
+  async function addItems() {
+    if (disabled) return;
 
-    setItems(nextItems);
-    setError("");
-    return true;
-  }
+    const lines = input
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-  function addItems() {
-    const newItems = createInboxItems(input);
-
-    if (newItems.length === 0) {
+    if (!lines.length) {
       setError("Write at least one item first.");
       setMessage("");
       captureRef.current?.focus();
       return;
     }
 
-    // Load the latest saved Inbox so Quick Add entries
-    // are not overwritten by older component state.
-    const latestItems = loadInbox();
+    setSaving(true);
+    setError("");
 
-    if (!commit([...newItems, ...latestItems])) {
-      return;
+    try {
+      await onAddItems(lines);
+      setInput("");
+      setMessage(
+        lines.length === 1
+          ? "Your thought was captured."
+          : `${lines.length} items captured.`,
+      );
+      captureRef.current?.focus();
+    } catch (cause) {
+      setMessage("");
+      setError(
+        cause instanceof Error ? cause.message : "Could not save to Inbox.",
+      );
+    } finally {
+      setSaving(false);
     }
-
-    setInput("");
-    setMessage(
-      newItems.length === 1
-        ? "Your thought was captured."
-        : `${newItems.length} items captured.`,
-    );
-
-    captureRef.current?.focus();
   }
 
   function onCaptureKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -219,7 +181,7 @@ function Inbox({ onOrganize }: InboxProps) {
       !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
-      addItems();
+      void addItems();
     }
 
     if (event.key === "Escape" && message) {
@@ -228,14 +190,15 @@ function Inbox({ onOrganize }: InboxProps) {
   }
 
   function startEditing(item: InboxItem) {
+    if (disabled) return;
     setEditingId(item.id);
     setEditingText(item.text);
     setMessage("");
     setError("");
   }
 
-  function saveEdit() {
-    if (!editingId) return;
+  async function saveEdit() {
+    if (!editingId || disabled) return;
 
     const text = editingText.trim();
 
@@ -244,38 +207,56 @@ function Inbox({ onOrganize }: InboxProps) {
       return;
     }
 
-    const updated = items.map((item) =>
-      item.id === editingId ? { ...item, text } : item,
-    );
+    setSaving(true);
+    setError("");
 
-    if (!commit(updated)) return;
-
-    setEditingId(null);
-    setEditingText("");
-    setMessage("Item updated.");
+    try {
+      await onUpdateItem(editingId, text);
+      setEditingId(null);
+      setEditingText("");
+      setMessage("Item updated.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not update item.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function cancelEdit() {
+    if (disabled) return;
     setEditingId(null);
     setEditingText("");
     setError("");
   }
 
-  function deleteItem(item: InboxItem) {
-    const confirmed = window.confirm(`Delete this Inbox item?\n\n${item.text}`);
+  async function deleteItem(item: InboxItem) {
+    if (disabled) return;
 
-    if (!confirmed) return;
-
-    const next = items.filter((entry) => entry.id !== item.id);
-
-    if (!commit(next)) return;
-
-    if (editingId === item.id) {
-      setEditingId(null);
-      setEditingText("");
+    if (!window.confirm(`Delete this Inbox item?\n\n${item.text}`)) {
+      return;
     }
 
-    setMessage("Item deleted.");
+    setSaving(true);
+    setError("");
+
+    try {
+      await onDeleteItem(item.id);
+
+      if (editingId === item.id) {
+        setEditingId(null);
+        setEditingText("");
+      }
+
+      setMessage("Item deleted.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not delete item.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function clearSearch() {
@@ -285,34 +266,26 @@ function Inbox({ onOrganize }: InboxProps) {
 
   return (
     <main className="fm-inbox">
-      {/* PAGE INTRO */}
-
       <header className="fm-inbox-header">
         <div className="fm-inbox-header-copy">
           <span className="fm-inbox-eyebrow">YOUR CAPTURE SPACE</span>
-
           <h1>
             Inbox<span>.</span>
           </h1>
-
           <p>
             A place for everything on your mind. Capture now, organize later.
           </p>
         </div>
-
         <div className="fm-inbox-header-icon" aria-hidden="true">
           <Icon name="inbox" size={23} />
         </div>
       </header>
-
-      {/* QUICK CAPTURE */}
 
       <section className="fm-inbox-capture" aria-label="Quick capture">
         <div className="fm-inbox-capture-heading">
           <span className="fm-inbox-capture-plus">
             <Icon name="plus" size={20} />
           </span>
-
           <div>
             <h2>Quick capture</h2>
             <p>Get it out of your head and into your Inbox.</p>
@@ -330,11 +303,11 @@ function Inbox({ onOrganize }: InboxProps) {
           rows={3}
           placeholder="What's on your mind?"
           value={input}
+          disabled={disabled}
           onChange={(event) => {
             setInput(event.target.value);
-
-            if (error) setError("");
-            if (message) setMessage("");
+            setError("");
+            setMessage("");
           }}
           onKeyDown={onCaptureKeyDown}
         />
@@ -344,13 +317,10 @@ function Inbox({ onOrganize }: InboxProps) {
             <span>
               <kbd>Enter</kbd> to capture
             </span>
-
             <span className="fm-inbox-hint-divider">·</span>
-
             <span>
               <kbd>Shift</kbd> + <kbd>Enter</kbd> for new line
             </span>
-
             {readyCount > 1 && (
               <span className="fm-inbox-ready-count">
                 {readyCount} items ready
@@ -361,21 +331,18 @@ function Inbox({ onOrganize }: InboxProps) {
           <button
             type="button"
             className="fm-inbox-capture-button"
-            onClick={addItems}
-            disabled={readyCount === 0}
+            disabled={readyCount === 0 || disabled}
+            onClick={() => void addItems()}
           >
             <Icon name="plus" size={17} />
-            Capture
+            {saving ? "Saving..." : "Capture"}
           </button>
         </footer>
       </section>
 
-      {/* FEEDBACK */}
-
       {error && (
         <div className="fm-inbox-feedback fm-inbox-error" role="alert">
           {error}
-
           <button
             type="button"
             onClick={() => setError("")}
@@ -390,7 +357,6 @@ function Inbox({ onOrganize }: InboxProps) {
         <div className="fm-inbox-feedback fm-inbox-success" role="status">
           <Icon name="check" size={17} />
           <span>{message}</span>
-
           <button
             type="button"
             onClick={() => setMessage("")}
@@ -401,8 +367,6 @@ function Inbox({ onOrganize }: InboxProps) {
         </div>
       )}
 
-      {/* UNPROCESSED ITEMS */}
-
       <section
         className="fm-inbox-items-section"
         aria-label="Unprocessed Inbox items"
@@ -410,7 +374,6 @@ function Inbox({ onOrganize }: InboxProps) {
         <div className="fm-inbox-list-header">
           <div className="fm-inbox-list-title">
             <h2>Unprocessed</h2>
-
             <span className="fm-inbox-count">{items.length}</span>
           </div>
 
@@ -418,7 +381,6 @@ function Inbox({ onOrganize }: InboxProps) {
             {showSearch ? (
               <div className="fm-inbox-search-wrap">
                 <Icon name="search" size={16} />
-
                 <input
                   ref={searchRef}
                   type="search"
@@ -432,7 +394,6 @@ function Inbox({ onOrganize }: InboxProps) {
                     }
                   }}
                 />
-
                 <button
                   type="button"
                   onClick={clearSearch}
@@ -458,15 +419,9 @@ function Inbox({ onOrganize }: InboxProps) {
         {visibleItems.length === 0 ? (
           <div className="fm-inbox-empty">
             <div className="fm-inbox-empty-symbol">
-              {items.length === 0 ? (
-                <Icon name="inbox" size={25} />
-              ) : (
-                <Icon name="search" size={25} />
-              )}
+              <Icon name={items.length === 0 ? "inbox" : "search"} size={25} />
             </div>
-
             <h3>{items.length === 0 ? "All clear." : "No matching items."}</h3>
-
             <p>
               {items.length === 0
                 ? "Your Inbox is clear. Capture a thought whenever you're ready."
@@ -496,6 +451,7 @@ function Inbox({ onOrganize }: InboxProps) {
                       id={`fm-inbox-edit-${item.id}`}
                       rows={3}
                       value={editingText}
+                      disabled={disabled}
                       onChange={(event) => setEditingText(event.target.value)}
                       onKeyDown={(event) => {
                         if (
@@ -503,7 +459,7 @@ function Inbox({ onOrganize }: InboxProps) {
                           (event.ctrlKey || event.metaKey)
                         ) {
                           event.preventDefault();
-                          saveEdit();
+                          void saveEdit();
                         }
 
                         if (event.key === "Escape") {
@@ -514,22 +470,22 @@ function Inbox({ onOrganize }: InboxProps) {
 
                     <div className="fm-inbox-edit-footer">
                       <span>Ctrl + Enter to save</span>
-
                       <div className="fm-inbox-edit-actions">
                         <button
                           type="button"
                           className="fm-inbox-button-ghost"
                           onClick={cancelEdit}
+                          disabled={disabled}
                         >
                           Cancel
                         </button>
-
                         <button
                           type="button"
                           className="fm-inbox-button-dark"
-                          onClick={saveEdit}
+                          onClick={() => void saveEdit()}
+                          disabled={disabled}
                         >
-                          Save changes
+                          {saving ? "Saving..." : "Save changes"}
                         </button>
                       </div>
                     </div>
@@ -543,7 +499,6 @@ function Inbox({ onOrganize }: InboxProps) {
 
                       <div className="fm-inbox-item-info">
                         <h3>{item.text}</h3>
-
                         <time dateTime={item.createdAt}>
                           {formatCreatedAt(item.createdAt)}
                         </time>
@@ -554,6 +509,7 @@ function Inbox({ onOrganize }: InboxProps) {
                       <button
                         type="button"
                         className="fm-inbox-organize"
+                        disabled={disabled}
                         onClick={() => onOrganize(item)}
                         title="Convert to task"
                       >
@@ -564,6 +520,7 @@ function Inbox({ onOrganize }: InboxProps) {
                       <button
                         type="button"
                         className="fm-inbox-icon-button"
+                        disabled={disabled}
                         onClick={() => startEditing(item)}
                         aria-label={`Edit ${item.text}`}
                         title="Edit item"
@@ -574,7 +531,8 @@ function Inbox({ onOrganize }: InboxProps) {
                       <button
                         type="button"
                         className="fm-inbox-icon-button fm-inbox-delete"
-                        onClick={() => deleteItem(item)}
+                        disabled={disabled}
+                        onClick={() => void deleteItem(item)}
                         aria-label={`Delete ${item.text}`}
                         title="Delete item"
                       >
@@ -591,5 +549,3 @@ function Inbox({ onOrganize }: InboxProps) {
     </main>
   );
 }
-
-export default Inbox;

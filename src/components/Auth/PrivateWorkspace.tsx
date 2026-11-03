@@ -1,14 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-
-import AIAssistant from "../../AI/AIAssistant";
-import type { AssistantTaskDraft } from "../../AI/AIAssistant";
-
-import Dashboard from "../Dashboard/Dashboard";
-import Tasks from "../Tasks/Tasks";
-import Projects from "../Projects/Projects";
-import Calendar from "../Calendar/Calendar";
-import Sidebar from "../Sidebar/Sidebar";
 
 import type {
   Page,
@@ -21,6 +12,22 @@ import type {
   ProjectFormState,
 } from "../../types";
 
+import type { InboxItem } from "../../utils/inboxStorage";
+import type { FocusHistoryEntry } from "../../utils/focusHistory";
+import type { AssistantTaskDraft } from "../../AI/AIAssistant";
+import type { CloudTaskInput } from "../../services/workspace";
+
+import AIAssistant from "../../AI/AIAssistant";
+import Dashboard from "../Dashboard/Dashboard";
+import Tasks from "../Tasks/Tasks";
+import Projects from "../Projects/Projects";
+import Calendar from "../Calendar/Calendar";
+import Sidebar from "../Sidebar/Sidebar";
+import Inbox from "../Inbox/Inbox";
+import MyDay from "../MyDay/MyDay";
+import QuickAdd from "../QuickAdd/QuickAdd";
+import GlobalSearch from "../GlobalSearch/GlobalSearch";
+
 import {
   loadWorkspace,
   createCloudTask,
@@ -32,9 +39,19 @@ import {
   deleteCloudProject,
 } from "../../services/workspace";
 
-import type { CloudTaskInput } from "../../services/workspace";
+import {
+  loadCloudInbox,
+  createCloudInboxItems,
+  updateCloudInboxItem,
+  deleteCloudInboxItem,
+} from "../../services/cloudInbox";
 
-interface PrivateWorkspaceProps {
+import {
+  loadCloudFocusHistory,
+  addCloudFocusEntry,
+} from "../../services/cloudFocusHistory";
+
+interface Props {
   userId: string;
   onSignOut: () => void;
   signingOut: boolean;
@@ -78,44 +95,40 @@ const INITIAL_PROJECT_FORM: ProjectFormState = {
   editingId: null,
 };
 
-function normalizeProjectName(value: string): string {
+function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("bg-BG");
 }
 
-function parseProjectAliases(value: string): string[] {
-  const aliases: string[] = [];
-  const seen = new Set<string>();
-
-  for (const item of value.split(",")) {
-    const alias = item.trim().replace(/\s+/g, " ");
-
-    if (!alias) continue;
-
-    const normalized = normalizeProjectName(alias);
-
-    if (seen.has(normalized)) continue;
-
-    seen.add(normalized);
-    aliases.push(alias);
-  }
-
-  return aliases;
+function errorText(cause: unknown): string {
+  return cause instanceof Error
+    ? cause.message
+    : "Could not save your changes.";
 }
 
 export default function PrivateWorkspace({
   userId,
   onSignOut,
   signingOut,
-}: PrivateWorkspaceProps) {
+}: Props) {
   const [page, setPage] = useState<Page>("dashboard");
 
   const [tasks, setTasks] = useState<Task[]>([]);
+
   const [projects, setProjects] = useState<Project[]>([]);
+
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
+
+  const [focusHistory, setFocusHistory] = useState<FocusHistoryEntry[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [inboxLoaded, setInboxLoaded] = useState(false);
+  const [focusLoaded, setFocusLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState("");
+  const [inboxError, setInboxError] = useState("");
+  const [focusError, setFocusError] = useState("");
 
   const [taskForm, setTaskForm] = useState<TaskFormState>(INITIAL_TASK_FORM);
 
@@ -124,79 +137,98 @@ export default function PrivateWorkspace({
   const [projectForm, setProjectForm] =
     useState<ProjectFormState>(INITIAL_PROJECT_FORM);
 
-  const [pendingAiCount, setPendingAiCount] = useState(0);
+  const [pendingInboxId, setPendingInboxId] = useState<string | null>(null);
 
   const [failedAiTasks, setFailedAiTasks] = useState<CloudTaskInput[]>([]);
 
-  const mountedRef = useRef(false);
-  const busyRef = useRef(false);
+  const [pendingAiCount, setPendingAiCount] = useState(0);
 
-  const pendingAiRef = useRef<CloudTaskInput[]>([]);
+  const mounted = useRef(false);
+  const busy = useRef(false);
+  const inboxBusy = useRef(false);
+  const aiQueue = useRef<CloudTaskInput[]>([]);
+  const aiTimer = useRef<number | null>(null);
 
-  const aiFlushTimerRef = useRef<number | null>(null);
+  const refreshWorkspace = useCallback(async () => {
+    const data = await loadWorkspace(userId);
+
+    if (mounted.current) {
+      setTasks(data.tasks);
+      setProjects(data.projects);
+      setLoaded(true);
+    }
+  }, [userId]);
+
+  const refreshInbox = useCallback(async () => {
+    const data = await loadCloudInbox(userId);
+
+    if (mounted.current) {
+      setInbox(data);
+      setInboxLoaded(true);
+      setInboxError("");
+    }
+  }, [userId]);
+
+  const refreshFocus = useCallback(async () => {
+    const data = await loadCloudFocusHistory(userId);
+
+    if (mounted.current) {
+      setFocusHistory(data);
+      setFocusLoaded(true);
+      setFocusError("");
+    }
+  }, [userId]);
 
   useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-
-      if (aiFlushTimerRef.current !== null) {
-        window.clearTimeout(aiFlushTimerRef.current);
-        aiFlushTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  async function refreshWorkspace() {
-    const workspace = await loadWorkspace(userId);
-
-    if (!mountedRef.current) return;
-
-    setTasks(workspace.tasks);
-    setProjects(workspace.projects);
-    setLoaded(true);
-  }
-
-  async function initialize() {
-    if (busyRef.current) return;
+    mounted.current = true;
 
     setLoading(true);
     setLoaded(false);
-    setError("");
+    setInboxLoaded(false);
+    setFocusLoaded(false);
 
-    try {
-      await refreshWorkspace();
-    } catch (cause) {
-      if (!mountedRef.current) return;
-
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not load your workspace.",
-      );
-    } finally {
-      if (mountedRef.current) {
+    void Promise.allSettled([
+      refreshWorkspace().catch((cause: unknown) => {
+        if (mounted.current) {
+          setError(errorText(cause));
+        }
+      }),
+      refreshInbox().catch((cause: unknown) => {
+        if (mounted.current) {
+          setInboxError(errorText(cause));
+        }
+      }),
+      refreshFocus().catch((cause: unknown) => {
+        if (mounted.current) {
+          setFocusError(errorText(cause));
+        }
+      }),
+    ]).then(() => {
+      if (mounted.current) {
         setLoading(false);
       }
-    }
-  }
+    });
 
-  useEffect(() => {
-    void initialize();
-    // Only reload when the authenticated user changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+    return () => {
+      mounted.current = false;
+
+      if (aiTimer.current !== null) {
+        window.clearTimeout(aiTimer.current);
+      }
+
+      aiTimer.current = null;
+    };
+  }, [refreshWorkspace, refreshInbox, refreshFocus]);
 
   async function runAction(
     action: () => Promise<void>,
-    afterSuccess?: () => void,
+    after?: () => void,
   ): Promise<boolean> {
-    if (busyRef.current || !loaded) {
+    if (busy.current || !loaded) {
       return false;
     }
 
-    busyRef.current = true;
+    busy.current = true;
     setSaving(true);
     setError("");
 
@@ -204,148 +236,196 @@ export default function PrivateWorkspace({
       await action();
       await refreshWorkspace();
 
-      if (mountedRef.current) {
-        afterSuccess?.();
+      if (mounted.current) {
+        after?.();
       }
 
       return true;
     } catch (cause) {
-      if (mountedRef.current) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Could not save your changes.",
-        );
+      if (mounted.current) {
+        setError(errorText(cause));
       }
 
       return false;
     } finally {
-      busyRef.current = false;
+      busy.current = false;
 
-      if (mountedRef.current) {
+      if (mounted.current) {
         setSaving(false);
 
-        if (pendingAiRef.current.length > 0) {
-          scheduleAiFlush();
+        if (aiQueue.current.length) {
+          flushAiQueue();
         }
       }
     }
   }
 
-  function scheduleAiFlush() {
-    if (aiFlushTimerRef.current !== null || !mountedRef.current) {
+  function flushAiQueue() {
+    if (aiTimer.current !== null || !mounted.current) {
       return;
     }
 
-    aiFlushTimerRef.current = window.setTimeout(() => {
-      aiFlushTimerRef.current = null;
+    aiTimer.current = window.setTimeout(() => {
+      aiTimer.current = null;
 
-      if (!mountedRef.current) return;
-
-      if (busyRef.current) {
-        // The current action will schedule this
-        // batch again when it finishes.
+      if (!mounted.current || busy.current) {
         return;
       }
 
-      const batch = pendingAiRef.current.splice(0);
+      const batch = aiQueue.current.splice(0);
 
-      setPendingAiCount(pendingAiRef.current.length);
+      setPendingAiCount(aiQueue.current.length);
 
-      if (batch.length === 0) return;
+      if (!batch.length) return;
 
-      void runAction(() => createCloudTasks(userId, batch)).then((success) => {
-        if (!mountedRef.current) return;
-
-        if (!success) {
-          setFailedAiTasks((previous) => [...previous, ...batch]);
+      void runAction(() => createCloudTasks(userId, batch)).then((ok) => {
+        if (!ok && mounted.current) {
+          setFailedAiTasks((before) => [...before, ...batch]);
         }
       });
     }, 0);
   }
 
   function createTaskFromAssistant(draft: AssistantTaskDraft) {
-    const name = draft.title.trim();
-
-    if (!name || !loaded) return;
-
-    const projectId = projects.some((project) => project.id === draft.projectId)
-      ? draft.projectId
-      : "";
-
-    pendingAiRef.current.push({
-      id: crypto.randomUUID(),
-      title: name,
-      priority: draft.priority,
-      dueDate: draft.dueDate,
-      projectId,
-    });
-
-    setPendingAiCount(pendingAiRef.current.length);
-    scheduleAiFlush();
-  }
-
-  async function retryFailedAiTasks() {
-    if (failedAiTasks.length === 0 || busyRef.current) {
+    if (!loaded || !draft.title.trim()) {
       return;
     }
 
-    const batch = [...failedAiTasks];
+    aiQueue.current.push({
+      id: crypto.randomUUID(),
+      title: draft.title.trim(),
+      priority: draft.priority,
+      dueDate: draft.dueDate,
+      projectId: projects.some((project) => project.id === draft.projectId)
+        ? draft.projectId
+        : "",
+    });
 
-    const success = await runAction(() => createCloudTasks(userId, batch));
+    setPendingAiCount(aiQueue.current.length);
 
-    if (success && mountedRef.current) {
-      setFailedAiTasks([]);
+    flushAiQueue();
+  }
+
+  async function retryFailedAiTasks() {
+    if (!failedAiTasks.length || busy.current) {
+      return;
+    }
+
+    try {
+      const server = await loadWorkspace(userId);
+
+      const missing = failedAiTasks.filter(
+        (draft) => !server.tasks.some((task) => task.id === draft.id),
+      );
+
+      if (missing.length === 0) {
+        setFailedAiTasks([]);
+        await refreshWorkspace();
+        return;
+      }
+
+      const saved = await runAction(() => createCloudTasks(userId, missing));
+
+      if (saved) {
+        setFailedAiTasks([]);
+      }
+    } catch (cause) {
+      setError(errorText(cause));
     }
   }
 
-  const visibleTasks = useMemo(() => {
-    const { search, status, project, sort } = taskFilters;
+  async function inboxAction(action: () => Promise<void>): Promise<void> {
+    if (!inboxLoaded) {
+      throw new Error(inboxError || "Inbox could not be loaded.");
+    }
 
-    return tasks
-      .filter((task) => {
-        const matchesSearch = task.title
-          .toLowerCase()
-          .includes(search.toLowerCase().trim());
+    if (inboxBusy.current) {
+      throw new Error("An Inbox action is still saving.");
+    }
 
-        const matchesStatus = status === "all" || task.status === status;
+    inboxBusy.current = true;
 
-        const matchesProject =
-          project === "all" ||
-          (project === "none"
-            ? !task.projectId ||
-              !projects.some((item) => item.id === task.projectId)
-            : task.projectId === project);
-
-        return matchesSearch && matchesStatus && matchesProject;
-      })
-      .sort((a, b) => {
-        if (sort === "priority") {
-          const difference =
-            PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
-
-          if (difference !== 0) {
-            return difference;
-          }
-        }
-
-        if (sort === "due-date") {
-          return (a.dueDate || "9999-12-31").localeCompare(
-            b.dueDate || "9999-12-31",
-          );
-        }
-
-        if (sort === "oldest") {
-          return a.createdAt.localeCompare(b.createdAt);
-        }
-
-        return b.createdAt.localeCompare(a.createdAt);
-      });
-  }, [tasks, projects, taskFilters]);
-
-  function navigate(next: Page) {
-    setPage(next);
+    try {
+      await action();
+      await refreshInbox();
+    } catch (cause) {
+      setInboxError(errorText(cause));
+      throw cause;
+    } finally {
+      inboxBusy.current = false;
+    }
   }
+
+  const addInboxItems = (texts: string[]) =>
+    inboxAction(() => createCloudInboxItems(userId, texts));
+
+  const editInboxItem = (id: string, text: string) =>
+    inboxAction(() => updateCloudInboxItem(userId, id, text));
+
+  const removeInboxItem = (id: string) =>
+    inboxAction(() => deleteCloudInboxItem(userId, id));
+
+  const onFocusComplete = useCallback(
+    async (entry: FocusHistoryEntry): Promise<void> => {
+      if (!focusLoaded) {
+        throw new Error(focusError || "Focus history is not loaded.");
+      }
+
+      await addCloudFocusEntry(userId, entry);
+
+      try {
+        await refreshFocus();
+      } catch (cause) {
+        if (mounted.current) {
+          setFocusError(errorText(cause));
+        }
+      }
+    },
+    [focusLoaded, focusError, refreshFocus, userId],
+  );
+
+  const visibleTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => {
+          const { search, status, project } = taskFilters;
+
+          const matchesSearch = task.title
+            .toLowerCase()
+            .includes(search.trim().toLowerCase());
+
+          const matchesStatus = status === "all" || task.status === status;
+
+          const matchesProject =
+            project === "all" ||
+            (project === "none" ? !task.projectId : task.projectId === project);
+
+          return matchesSearch && matchesStatus && matchesProject;
+        })
+        .sort((a, b) => {
+          if (taskFilters.sort === "priority") {
+            const delta =
+              PRIORITY_VALUE[b.priority] - PRIORITY_VALUE[a.priority];
+
+            if (delta !== 0) {
+              return delta;
+            }
+          }
+
+          if (taskFilters.sort === "due-date") {
+            return (a.dueDate || "9999-12-31").localeCompare(
+              b.dueDate || "9999-12-31",
+            );
+          }
+
+          if (taskFilters.sort === "oldest") {
+            return a.createdAt.localeCompare(b.createdAt);
+          }
+
+          return b.createdAt.localeCompare(a.createdAt);
+        }),
+    [tasks, taskFilters],
+  );
 
   function updateTaskForm(changes: Partial<TaskFormState>) {
     setTaskForm((previous) => ({
@@ -362,15 +442,19 @@ export default function PrivateWorkspace({
   }
 
   function resetTaskForm() {
-    setTaskForm({ ...INITIAL_TASK_FORM });
+    setTaskForm({
+      ...INITIAL_TASK_FORM,
+    });
+
+    setPendingInboxId(null);
   }
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const name = taskForm.title.trim();
-
-    if (!name || busyRef.current || !loaded) return;
+    if (!taskForm.title.trim() || busy.current || !loaded) {
+      return;
+    }
 
     const projectId = projects.some(
       (project) => project.id === taskForm.projectId,
@@ -378,13 +462,13 @@ export default function PrivateWorkspace({
       ? taskForm.projectId
       : "";
 
-    const editingId = taskForm.editingId;
+    if (taskForm.editingId) {
+      const id = taskForm.editingId;
 
-    if (editingId) {
       void runAction(
         () =>
-          updateCloudTask(userId, editingId, {
-            title: name,
+          updateCloudTask(userId, id, {
+            title: taskForm.title,
             priority: taskForm.priority,
             dueDate: taskForm.dueDate,
             projectId,
@@ -395,19 +479,35 @@ export default function PrivateWorkspace({
       return;
     }
 
+    const inboxId = pendingInboxId;
+
     void runAction(
       () =>
         createCloudTask(userId, {
-          title: name,
+          title: taskForm.title,
           priority: taskForm.priority,
           dueDate: taskForm.dueDate,
           projectId,
         }),
-      resetTaskForm,
+      () => {
+        resetTaskForm();
+
+        if (inboxId) {
+          void removeInboxItem(inboxId).catch((cause: unknown) => {
+            setError(
+              `Task saved, but the Inbox note could not be removed: ${errorText(
+                cause,
+              )}`,
+            );
+          });
+        }
+      },
     );
   }
 
   function startEditTask(task: Task) {
+    setPendingInboxId(null);
+
     setTaskForm({
       title: task.title,
       priority: task.priority,
@@ -427,7 +527,11 @@ export default function PrivateWorkspace({
   }
 
   function changeTaskStatus(id: string, status: TaskStatus) {
-    void runAction(() => updateCloudTask(userId, id, { status }));
+    void runAction(() =>
+      updateCloudTask(userId, id, {
+        status,
+      }),
+    );
   }
 
   function deleteTask(task: Task) {
@@ -445,6 +549,24 @@ export default function PrivateWorkspace({
     );
   }
 
+  function organizeInboxItem(item: InboxItem) {
+    setPendingInboxId(item.id);
+
+    setTaskForm({
+      ...INITIAL_TASK_FORM,
+      title: item.text.slice(0, 200),
+    });
+
+    setTaskFilters((previous) => ({
+      ...previous,
+      search: "",
+      status: "all",
+      project: "all",
+    }));
+
+    setPage("tasks");
+  }
+
   function updateProjectForm(changes: Partial<ProjectFormState>) {
     setProjectForm((previous) => ({
       ...previous,
@@ -453,42 +575,43 @@ export default function PrivateWorkspace({
   }
 
   function resetProjectForm() {
-    setProjectForm({ ...INITIAL_PROJECT_FORM });
+    setProjectForm({
+      ...INITIAL_PROJECT_FORM,
+    });
   }
 
   function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (busyRef.current || !loaded) return;
+    if (busy.current || !loaded) {
+      return;
+    }
 
     const name = projectForm.name.trim().replace(/\s+/g, " ");
 
     if (!name) return;
 
-    const normalizedName = normalizeProjectName(name);
+    const aliases = [
+      ...new Set(
+        projectForm.aliases
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ].filter((item) => normalize(item) !== normalize(name));
 
-    const aliases = parseProjectAliases(projectForm.aliases).filter(
-      (alias) => normalizeProjectName(alias) !== normalizedName,
+    const candidateNames = new Set([name, ...aliases].map(normalize));
+
+    const conflict = projects.find(
+      (project) =>
+        project.id !== projectForm.editingId &&
+        [project.name, ...(project.aliases ?? [])].some((item) =>
+          candidateNames.has(normalize(item)),
+        ),
     );
 
-    const candidateKeys = new Set([name, ...aliases].map(normalizeProjectName));
-
-    const conflict = projects.find((project) => {
-      if (project.id === projectForm.editingId) {
-        return false;
-      }
-
-      const names = [project.name, ...(project.aliases ?? [])];
-
-      return names.some((existing) =>
-        candidateKeys.has(normalizeProjectName(existing)),
-      );
-    });
-
     if (conflict) {
-      setError(
-        `A project name or alias is already used by "${conflict.name}".`,
-      );
+      setError(`Project name or alias already used by "${conflict.name}".`);
       return;
     }
 
@@ -506,11 +629,9 @@ export default function PrivateWorkspace({
         () => updateCloudProject(userId, id, input),
         resetProjectForm,
       );
-
-      return;
+    } else {
+      void runAction(() => createCloudProject(userId, input), resetProjectForm);
     }
-
-    void runAction(() => createCloudProject(userId, input), resetProjectForm);
   }
 
   function startEditProject(project: Project) {
@@ -530,8 +651,8 @@ export default function PrivateWorkspace({
 
     const confirmed = window.confirm(
       `Delete "${project.name}"?\n\n` +
-        `${count} task(s) will become unassigned. ` +
-        "The tasks themselves will NOT be deleted.",
+        `${count} tasks will become unassigned. ` +
+        "Tasks will not be deleted.",
     );
 
     if (!confirmed) return;
@@ -544,11 +665,15 @@ export default function PrivateWorkspace({
         }
 
         if (taskFilters.project === project.id) {
-          updateTaskFilters({ project: "all" });
+          updateTaskFilters({
+            project: "all",
+          });
         }
 
         if (taskForm.projectId === project.id) {
-          updateTaskForm({ projectId: "" });
+          updateTaskForm({
+            projectId: "",
+          });
         }
       },
     );
@@ -566,6 +691,8 @@ export default function PrivateWorkspace({
   }
 
   function addTaskFromCalendar(date: string) {
+    setPendingInboxId(null);
+
     setTaskForm({
       ...INITIAL_TASK_FORM,
       dueDate: date,
@@ -573,9 +700,9 @@ export default function PrivateWorkspace({
 
     setTaskFilters((previous) => ({
       ...previous,
-      search: "",
-      status: "all",
       project: "all",
+      status: "all",
+      search: "",
     }));
 
     setPage("tasks");
@@ -584,24 +711,41 @@ export default function PrivateWorkspace({
   function openTaskFromCalendar(id: string) {
     const task = tasks.find((item) => item.id === id);
 
-    if (task) startEditTask(task);
+    if (task) {
+      startEditTask(task);
+    }
   }
-
-  const signOutDisabled = signingOut || saving || pendingAiCount > 0;
 
   return (
     <div className="app">
-      <Sidebar currentPage={page} onNavigate={navigate} />
+      <Sidebar currentPage={page} onNavigate={setPage} />
+
+      {inboxLoaded && (
+        <QuickAdd
+          onOpenInbox={() => setPage("inbox")}
+          onAddItems={addInboxItems}
+        />
+      )}
+
+      {inboxLoaded && (
+        <GlobalSearch
+          tasks={tasks}
+          projects={projects}
+          inbox={inbox}
+          onOpenTask={startEditTask}
+          onOpenProject={openProjectTasks}
+          onOpenInbox={() => setPage("inbox")}
+        />
+      )}
 
       <main className="content">
         <div
           style={{
             display: "flex",
-            alignItems: "center",
             justifyContent: "space-between",
+            alignItems: "center",
             gap: 12,
-            marginBottom: 20,
-            flexWrap: "wrap",
+            marginBottom: 18,
           }}
         >
           <span
@@ -611,27 +755,20 @@ export default function PrivateWorkspace({
             }}
           >
             Private workspace
-            {saving
-              ? " · Saving..."
-              : pendingAiCount > 0
-                ? " · Preparing AI tasks..."
-                : ""}
+            {saving ? " · Saving..." : ""}
           </span>
 
           <button
             type="button"
             onClick={onSignOut}
-            disabled={signOutDisabled}
+            disabled={signingOut || saving || pendingAiCount > 0}
             style={{
               border: "1px solid var(--fm-border)",
               borderRadius: 9,
               padding: "9px 13px",
               background: "var(--fm-surface)",
               color: "var(--fm-text)",
-              cursor: signOutDisabled ? "not-allowed" : "pointer",
-              font: "inherit",
-              fontSize: 12,
-              opacity: signOutDisabled ? 0.5 : 1,
+              cursor: "pointer",
             }}
           >
             {signingOut ? "Signing out..." : "Sign out"}
@@ -639,90 +776,47 @@ export default function PrivateWorkspace({
         </div>
 
         {error && (
-          <div
+          <p
             role="alert"
             style={{
-              padding: 15,
-              marginBottom: 18,
-              border: "1px solid var(--fm-border)",
+              padding: 12,
+              background: "var(--fm-panel)",
               borderLeft: "3px solid #dc2626",
-              borderRadius: 10,
-              background: "var(--fm-surface)",
-              color: "var(--fm-text)",
-              fontSize: 12,
-              lineHeight: 1.7,
             }}
           >
             {error}
-          </div>
+          </p>
         )}
 
         {failedAiTasks.length > 0 && (
-          <div
-            style={{
-              padding: 15,
-              marginBottom: 18,
-              border: "1px solid var(--fm-border)",
-              borderRadius: 10,
-              background: "var(--fm-panel)",
-              color: "var(--fm-text)",
-              fontSize: 12,
-            }}
-          >
-            <strong>
-              {failedAiTasks.length} AI task(s) could not be confirmed as saved.
-            </strong>
-
-            <p
-              style={{
-                color: "var(--fm-secondary)",
-                lineHeight: 1.7,
-              }}
-            >
-              Check My Tasks before retrying. If the request reached the server
-              but its response was lost, retrying may encounter duplicate IDs.
-            </p>
-
+          <div role="alert">
+            {failedAiTasks.length} AI tasks could not be confirmed as saved.
             <button
               type="button"
-              disabled={saving || !loaded}
               onClick={() => {
                 void retryFailedAiTasks();
               }}
-              style={{
-                padding: "9px 12px",
-                border: "1px solid var(--fm-border)",
-                borderRadius: 8,
-                background: "var(--fm-surface)",
-                color: "var(--fm-text)",
-                font: "inherit",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
             >
-              Retry saving AI tasks
+              Retry missing tasks
             </button>
           </div>
         )}
 
         {loading ? (
-          <div>
-            <h1>Loading your workspace...</h1>
-            <p>Connecting to your private data.</p>
-          </div>
+          <h1>Loading your workspace...</h1>
         ) : !loaded ? (
           <section>
             <h1>Unable to load your workspace</h1>
 
-            <p>Your data was not loaded. Nothing has been overwritten.</p>
-
             <button
               type="button"
               onClick={() => {
-                void initialize();
+                void refreshWorkspace().catch((cause: unknown) =>
+                  setError(errorText(cause)),
+                );
               }}
             >
-              Retry connection
+              Retry
             </button>
           </section>
         ) : (
@@ -755,8 +849,8 @@ export default function PrivateWorkspace({
 
             {page === "projects" && (
               <Projects
-                projects={projects}
                 tasks={tasks}
+                projects={projects}
                 colors={COLORS}
                 form={projectForm}
                 onFormChange={updateProjectForm}
@@ -786,19 +880,52 @@ export default function PrivateWorkspace({
               />
             )}
 
-            {(page === "my-day" || page === "inbox") && (
-              <section>
-                <h1>{page === "my-day" ? "My Day" : "Inbox"}</h1>
+            {page === "inbox" &&
+              (!inboxLoaded ? (
+                <section>
+                  <h1>Inbox unavailable</h1>
 
-                <p>
-                  This section is temporarily unavailable while we move its data
-                  to your private account.
-                </p>
+                  <p role="alert">{inboxError}</p>
 
-                <button type="button" onClick={() => setPage("dashboard")}>
-                  Back to Dashboard
-                </button>
-              </section>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void refreshInbox().catch((cause: unknown) =>
+                        setInboxError(errorText(cause)),
+                      );
+                    }}
+                  >
+                    Retry
+                  </button>
+                </section>
+              ) : (
+                <Inbox
+                  items={inbox}
+                  onAddItems={addInboxItems}
+                  onUpdateItem={editInboxItem}
+                  onDeleteItem={removeInboxItem}
+                  onOrganize={organizeInboxItem}
+                />
+              ))}
+
+            {page === "my-day" && (
+              <MyDay
+                tasks={tasks}
+                projects={projects}
+                userId={userId}
+                onStatusChange={changeTaskStatus}
+                onEditTask={startEditTask}
+                onOpenTasks={() => setPage("tasks")}
+                focusHistory={focusHistory}
+                focusHistoryLoading={!focusLoaded}
+                focusHistoryError={focusError}
+                onFocusHistoryRefresh={() => {
+                  void refreshFocus().catch((cause: unknown) =>
+                    setFocusError(errorText(cause)),
+                  );
+                }}
+                onFocusComplete={onFocusComplete}
+              />
             )}
           </>
         )}
