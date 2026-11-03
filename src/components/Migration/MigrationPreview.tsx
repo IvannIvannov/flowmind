@@ -24,6 +24,7 @@ import { loadCloudFocusHistory } from "../../services/cloudFocusHistory";
 
 import InboxImportPanel from "./InboxImportPanel";
 import FocusImportPanel from "./FocusImportPanel";
+import BackupExportPanel from "../Backup/BackupExportPanel";
 
 import "./MigrationPreview.css";
 
@@ -81,6 +82,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
 
   const [showAll, setShowAll] = useState(true);
   const [confirming, setConfirming] = useState(false);
+
   const [confirmationText, setConfirmationText] = useState("");
 
   const requestId = useRef(0);
@@ -112,7 +114,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         loadCloudFocusHistory(userId),
       ]);
 
-      if (requestId.current !== request) return;
+      if (requestId.current !== request) {
+        return;
+      }
 
       setLocal(freshLocal);
 
@@ -123,7 +127,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         focusHistory,
       });
     } catch (cause) {
-      if (requestId.current !== request) return;
+      if (requestId.current !== request) {
+        return;
+      }
 
       setError(errorText(cause));
       throw cause;
@@ -144,6 +150,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
 
   const plan = useMemo(() => {
     if (!cloud) return null;
+
     return buildMigrationPlan(local, cloud);
   }, [local, cloud]);
 
@@ -165,7 +172,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   }
 
   function canSelect(item: MigrationPlanItem): boolean {
-    if (!cloud || !plan || importing) return false;
+    if (!cloud || !plan || importing) {
+      return false;
+    }
 
     if (item.kind === "project") {
       return (
@@ -182,7 +191,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         return false;
       }
 
-      if (!item.originalProjectId) return true;
+      if (!item.originalProjectId) {
+        return true;
+      }
 
       const choice = projectChoice(item.originalProjectId);
 
@@ -362,15 +373,15 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   }
 
   return (
-    <section className="fm-migration" aria-label="Data migration">
+    <section className="fm-migration" aria-label="Data migration and backup">
       <header className="fm-migration-header">
         <div>
-          <p className="fm-migration-eyebrow">DATA SAFETY · STEP 8</p>
+          <p className="fm-migration-eyebrow">DATA SAFETY</p>
 
-          <h2>Smart Import</h2>
+          <h2>Data Migration & Backup</h2>
 
           <p className="fm-migration-muted">
-            Review and import projects, tasks, Inbox notes and Focus History.
+            Back up your cloud workspace or import selected legacy records.
           </p>
         </div>
 
@@ -384,8 +395,11 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         </button>
       </header>
 
+      <BackupExportPanel userId={userId} />
+
       <div className="fm-migration-panel">
-        <strong>Destination account</strong>
+        <strong>Migration destination account</strong>
+
         <p className="fm-migration-id">{userId}</p>
 
         <p className="fm-migration-small">
@@ -396,17 +410,19 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       {success && (
         <div className="fm-migration-panel" role="status">
           <h3>Workspace import completed</h3>
+
           <p>
             {success.projectsCreated} projects and {success.tasksCreated} tasks
             created.
           </p>
+
           <p className="fm-migration-small">
             Reload the workspace to update the Dashboard.
           </p>
         </div>
       )}
 
-      {loading && <p role="status">Loading comparison...</p>}
+      {loading && <p role="status">Loading migration comparison...</p>}
 
       {importing && <p role="status">Importing workspace records...</p>}
 
@@ -421,6 +437,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
               className="fm-migration-button"
               onClick={() => {
                 setSuccess(null);
+
                 void refresh().catch(() => {});
               }}
             >
@@ -718,6 +735,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
               disabled={importing}
               onClick={() => {
                 setSuccess(null);
+
                 void refresh().catch(() => {});
               }}
             >
