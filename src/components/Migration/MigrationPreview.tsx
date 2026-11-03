@@ -10,8 +10,8 @@ import { buildMigrationPlan } from "../../services/migrationPlan";
 
 import type {
   MigrationCloudData,
-  MigrationPlanItem,
   MigrationKind,
+  MigrationPlanItem,
 } from "../../services/migrationPlan";
 
 import { executeWorkspaceMigration } from "../../services/migrationExecution";
@@ -21,6 +21,8 @@ import type { ImportResult } from "../../services/migrationExecution";
 import { loadWorkspace } from "../../services/workspace";
 import { loadCloudInbox } from "../../services/cloudInbox";
 import { loadCloudFocusHistory } from "../../services/cloudFocusHistory";
+
+import InboxImportPanel from "./InboxImportPanel";
 
 import "./MigrationPreview.css";
 
@@ -37,13 +39,11 @@ const GROUPS: {
 }[] = [
   { kind: "project", title: "Projects" },
   { kind: "task", title: "Tasks" },
-  { kind: "inbox", title: "Inbox" },
-  { kind: "focus", title: "Focus History" },
 ];
 
-function message(error: unknown): string {
-  return error instanceof Error
-    ? error.message
+function errorText(cause: unknown): string {
+  return cause instanceof Error
+    ? cause.message
     : "An unexpected error occurred.";
 }
 
@@ -59,23 +59,6 @@ function getItems(
   if (kind === "task") return plan.tasks;
   if (kind === "inbox") return plan.inbox;
   return plan.focusHistory;
-}
-
-function getLocalCount(
-  local: LocalMigrationPreview,
-  kind: MigrationKind,
-): number {
-  if (kind === "project") return local.projects.total;
-  if (kind === "task") return local.tasks.total;
-  if (kind === "inbox") return local.inbox.total;
-  return local.focusHistory.total;
-}
-
-function getCloudCount(cloud: MigrationCloudData, kind: MigrationKind): number {
-  if (kind === "project") return cloud.projects.length;
-  if (kind === "task") return cloud.tasks.length;
-  if (kind === "inbox") return cloud.inbox.length;
-  return cloud.focusHistory.length;
 }
 
 export default function MigrationPreview({ userId, onClose }: Props) {
@@ -101,14 +84,14 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   const requestId = useRef(0);
   const importBusy = useRef(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     if (importBusy.current) return;
 
-    const currentRequest = ++requestId.current;
+    const request = ++requestId.current;
 
     setLoading(true);
-    setCloud(null);
     setError("");
+    setCloud(null);
     setSelected([]);
     setDecisions({});
     setConfirming(false);
@@ -127,9 +110,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         loadCloudFocusHistory(userId),
       ]);
 
-      if (requestId.current !== currentRequest) {
-        return;
-      }
+      if (requestId.current !== request) return;
 
       setLocal(freshLocal);
       setCloud({
@@ -139,20 +120,18 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         focusHistory,
       });
     } catch (cause) {
-      if (requestId.current !== currentRequest) {
-        return;
-      }
-
-      setError(message(cause));
+      if (requestId.current !== request) return;
+      setError(errorText(cause));
+      throw cause;
     } finally {
-      if (requestId.current === currentRequest) {
+      if (requestId.current === request) {
         setLoading(false);
       }
     }
   }, [userId]);
 
   useEffect(() => {
-    void refresh();
+    void refresh().catch(() => {});
 
     return () => {
       requestId.current += 1;
@@ -160,16 +139,11 @@ export default function MigrationPreview({ userId, onClose }: Props) {
   }, [refresh]);
 
   const plan = useMemo(() => {
-    if (cloud === null) return null;
-
-    return buildMigrationPlan(local, cloud);
+    return cloud ? buildMigrationPlan(local, cloud) : null;
   }, [local, cloud]);
 
   const allItems = useMemo<MigrationPlanItem[]>(
-    () =>
-      plan
-        ? [...plan.projects, ...plan.tasks, ...plan.inbox, ...plan.focusHistory]
-        : [],
+    () => (plan ? [...plan.projects, ...plan.tasks] : []),
     [plan],
   );
 
@@ -207,25 +181,21 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         return false;
       }
 
-      if (!item.originalProjectId) {
-        return true;
-      }
+      if (!item.originalProjectId) return true;
 
       const choice = projectChoice(item.originalProjectId);
 
       if (choice === "create") {
-        const parent = plan.projects.find(
-          (project) => project.sourceId === item.originalProjectId,
+        return plan.projects.some(
+          (project) =>
+            project.sourceId === item.originalProjectId &&
+            project.status === "ready",
         );
-
-        return parent?.status === "ready";
       }
 
       return cloud.projects.some((project: Project) => project.id === choice);
     }
 
-    // Inbox and Focus History are not writable
-    // in this migration version.
     return false;
   }
 
@@ -249,11 +219,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
           return false;
         }
 
-        const dependentTask = plan?.tasks.find(
+        return !plan?.tasks.some(
           (task) => task.key === key && task.originalProjectId === id,
         );
-
-        return !dependentTask;
       }),
     );
 
@@ -317,13 +285,6 @@ export default function MigrationPreview({ userId, onClose }: Props) {
     resetConfirmation();
   }
 
-  function clearSelection(): void {
-    if (importing) return;
-
-    setSelected([]);
-    resetConfirmation();
-  }
-
   const selectedItems = allItems.filter((item) => selectedSet.has(item.key));
 
   const selectedProjects = selectedItems.filter(
@@ -347,14 +308,11 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       return;
     }
 
-    // Never import records that became disabled
-    // after changes to mapping or selection.
-    const invalidSelection = selectedItems.some((item) => !canSelect(item));
-
-    if (invalidSelection || selectedItems.length !== selected.length) {
-      setError(
-        "The selection is no longer valid. Refresh and select the records again.",
-      );
+    if (
+      selectedItems.length !== selected.length ||
+      selectedItems.some((item) => !canSelect(item))
+    ) {
+      setError("The selection changed. Refresh and try again.");
       return;
     }
 
@@ -373,15 +331,10 @@ export default function MigrationPreview({ userId, onClose }: Props) {
       });
 
       setSuccess(result);
-
-      // Fetch fresh cloud data and clear the
-      // old selection after successful import.
       setSelected([]);
       setConfirming(false);
       setConfirmationText("");
       setDecisions({});
-      setCloud(null);
-      setLoading(true);
 
       const [workspace, inbox, focusHistory] = await Promise.all([
         loadWorkspace(userId),
@@ -396,10 +349,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
         focusHistory,
       });
     } catch (cause) {
-      setError(message(cause));
-
-      // A failed request may have partially
-      // succeeded, so force a fresh comparison.
+      setError(errorText(cause));
       setCloud(null);
       setSelected([]);
       setConfirming(false);
@@ -407,31 +357,28 @@ export default function MigrationPreview({ userId, onClose }: Props) {
     } finally {
       importBusy.current = false;
       setImporting(false);
-      setLoading(false);
     }
   }
 
   return (
-    <section
-      className="fm-migration"
-      aria-label="Migration planning and execution"
-    >
+    <section className="fm-migration" aria-label="Data migration">
       <header className="fm-migration-header">
         <div>
-          <p className="fm-migration-eyebrow">DATA SAFETY · STEP 5</p>
+          <p className="fm-migration-eyebrow">DATA SAFETY · STEP 6</p>
 
           <h2>Smart Import</h2>
 
           <p className="fm-migration-muted">
-            Map local projects, select records and confirm before importing.
+            Import projects, tasks and Inbox notes with separate confirmation
+            steps.
           </p>
         </div>
 
         <button
           type="button"
           className="fm-migration-button"
-          onClick={onClose}
           disabled={importing}
+          onClick={onClose}
         >
           Close
         </button>
@@ -439,44 +386,35 @@ export default function MigrationPreview({ userId, onClose }: Props) {
 
       <div className="fm-migration-panel">
         <strong>Destination account</strong>
-
         <p className="fm-migration-id">{userId}</p>
 
         <p className="fm-migration-small">
-          Only selected projects and tasks can be imported at this stage. Local
-          records will not be deleted.
+          Original local records will not be deleted.
         </p>
       </div>
 
       {success && (
         <div className="fm-migration-panel" role="status">
-          <h3>Import completed</h3>
+          <h3>Workspace import completed</h3>
 
           <p>
-            Projects created: <strong>{success.projectsCreated}</strong>
-          </p>
-
-          <p>
-            Tasks created: <strong>{success.tasksCreated}</strong>
+            {success.projectsCreated} projects and {success.tasksCreated} tasks
+            created.
           </p>
 
           <p className="fm-migration-small">
-            These records are now in Supabase. Close this screen to return to
-            the workspace, then reload the workspace to see the updated data.
+            Reload the workspace to see the updated Dashboard.
           </p>
         </div>
       )}
 
-      {loading && (
-        <p role="status">
-          {importing ? "Importing records..." : "Loading comparison..."}
-        </p>
-      )}
+      {loading && <p role="status">Loading comparison...</p>}
+
+      {importing && <p role="status">Importing workspace records...</p>}
 
       {error && (
         <div className="fm-migration-panel fm-migration-error" role="alert">
-          <strong>Import or comparison error</strong>
-
+          <strong>Migration error</strong>
           <p>{error}</p>
 
           {!importing && (
@@ -485,7 +423,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
               className="fm-migration-button"
               onClick={() => {
                 setSuccess(null);
-                void refresh();
+                void refresh().catch(() => {});
               }}
             >
               Refresh comparison
@@ -509,7 +447,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
               ["Ready", plan.ready],
               ["Needs review", plan.needsReview],
               ["Blocked", plan.blocked],
-              ["Selected", selected.length],
+              ["Selected workspace", selected.length],
             ].map(([label, value]) => (
               <div key={String(label)} className="fm-migration-stat">
                 <span>{label}</span>
@@ -519,14 +457,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
           </div>
 
           <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">STEP 5.1</p>
+            <p className="fm-migration-eyebrow">STEP 6.1</p>
 
             <h3>Project Mapping</h3>
-
-            <p className="fm-migration-muted">
-              Choose whether to create a new project, link to an existing cloud
-              project or skip it.
-            </p>
 
             <div className="fm-migration-projects">
               {plan.projects.map((item) => {
@@ -534,54 +467,35 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                   (project) => project.id === item.sourceId,
                 );
 
-                const fixedCloudProject = cloud.projects.find(
-                  (project: Project) => project.id === item.sourceId,
+                const existingId = cloud.projects.find(
+                  (project) => project.id === item.sourceId,
                 );
 
                 const choice = projectChoice(item.sourceId);
 
-                const hasNameConflict = cloud.projects.some(
-                  (project: Project) => {
-                    const localNames = [
-                      source?.name ?? "",
-                      ...(source?.aliases ?? []),
-                    ].map(normalize);
+                const localNames = [
+                  source?.name ?? "",
+                  ...(source?.aliases ?? []),
+                ].map(normalize);
 
-                    const cloudNames = [
-                      project.name,
-                      ...(project.aliases ?? []),
-                    ].map(normalize);
-
-                    return localNames.some((name) => cloudNames.includes(name));
-                  },
+                const nameConflict = cloud.projects.some((project: Project) =>
+                  [project.name, ...(project.aliases ?? [])]
+                    .map(normalize)
+                    .some((name) => localNames.includes(name)),
                 );
 
-                const allowCreate = item.status === "ready" && !hasNameConflict;
-
-                const linkedTasks = local.tasks.items.filter(
-                  (task) => task.projectId === item.sourceId,
-                ).length;
+                const allowCreate = item.status === "ready" && !nameConflict;
 
                 return (
                   <div key={item.key} className="fm-migration-project">
-                    <div className="fm-migration-project-top">
-                      <div>
-                        <strong>{item.title}</strong>
-
-                        <p className="fm-migration-small">
-                          {linkedTasks} linked local tasks
-                        </p>
-                      </div>
-
-                      <span className="fm-migration-tag">{item.status}</span>
-                    </div>
+                    <strong>{item.title}</strong>
 
                     <label className="fm-migration-field">
                       <span>Project action</span>
 
                       <select
                         value={choice}
-                        disabled={importing || !!fixedCloudProject}
+                        disabled={importing || !!existingId}
                         onChange={(event) =>
                           changeProject(item.sourceId, event.target.value)
                         }
@@ -598,7 +512,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                           </option>
                         ))}
 
-                        {!fixedCloudProject && (
+                        {!existingId && (
                           <option value="skip">Skip this project</option>
                         )}
                       </select>
@@ -606,27 +520,13 @@ export default function MigrationPreview({ userId, onClose }: Props) {
 
                     <p className="fm-migration-small">
                       {choice === "create"
-                        ? "A new cloud project will be created if it is selected."
+                        ? "New project proposed"
                         : choice === "skip"
-                          ? "This project and its dependent tasks will not be imported."
-                          : cloud.projects.some(
-                                (project) => project.id === choice,
-                              )
-                            ? "Tasks can be linked to this existing cloud project."
-                            : "Choose a mapping before selecting linked tasks."}
+                          ? "Project excluded"
+                          : choice
+                            ? "Mapped to cloud project"
+                            : "Mapping not selected"}
                     </p>
-
-                    {choice === "create" && canSelect(item) && (
-                      <label className="fm-migration-check">
-                        <input
-                          type="checkbox"
-                          checked={selectedSet.has(item.key)}
-                          disabled={importing}
-                          onChange={() => toggleItem(item)}
-                        />
-                        Include this project
-                      </label>
-                    )}
                   </div>
                 );
               })}
@@ -634,14 +534,9 @@ export default function MigrationPreview({ userId, onClose }: Props) {
           </section>
 
           <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">STEP 5.2</p>
+            <p className="fm-migration-eyebrow">STEP 6.2</p>
 
-            <h3>Select records</h3>
-
-            <p className="fm-migration-muted">
-              Only projects and tasks are available for import. Inbox and Focus
-              History remain protected until their import logic is completed.
-            </p>
+            <h3>Import projects and tasks</h3>
 
             <div className="fm-migration-actions">
               <button
@@ -657,7 +552,10 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                 type="button"
                 className="fm-migration-button"
                 disabled={importing || selected.length === 0}
-                onClick={clearSelection}
+                onClick={() => {
+                  setSelected([]);
+                  resetConfirmation();
+                }}
               >
                 Clear selection
               </button>
@@ -666,7 +564,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                 type="button"
                 className="fm-migration-button"
                 disabled={importing}
-                onClick={() => setShowAll((previous) => !previous)}
+                onClick={() => setShowAll((current) => !current)}
               >
                 {showAll ? "Show first 5" : "Show all"}
               </button>
@@ -679,83 +577,49 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                 <div key={group.kind} className="fm-migration-group">
                   <h4>{group.title}</h4>
 
-                  <p className="fm-migration-small">
-                    {getLocalCount(local, group.kind)} local ·{" "}
-                    {getCloudCount(cloud, group.kind)} cloud
-                  </p>
+                  {(showAll ? items : items.slice(0, 5)).map((item) => (
+                    <label
+                      key={item.key}
+                      className={
+                        "fm-migration-record" +
+                        (!canSelect(item)
+                          ? " fm-migration-record-disabled"
+                          : "")
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(item.key)}
+                        disabled={importing || !canSelect(item)}
+                        onChange={() => toggleItem(item)}
+                      />
 
-                  {(showAll ? items : items.slice(0, 5)).map((item) => {
-                    const allowed = canSelect(item);
+                      <div>
+                        <strong>{item.title}</strong>
 
-                    return (
-                      <label
-                        key={item.key}
-                        className={
-                          "fm-migration-record" +
-                          (!allowed ? " fm-migration-record-disabled" : "")
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedSet.has(item.key)}
-                          disabled={!allowed || importing}
-                          onChange={() => toggleItem(item)}
-                        />
+                        <span className="fm-migration-tag">{item.status}</span>
 
-                        <div>
-                          <strong>{item.title || "(Untitled)"}</strong>
-
-                          <span className="fm-migration-tag">
-                            {item.status}
-                          </span>
-
-                          <p className="fm-migration-small">{item.reason}</p>
-
-                          {item.originalProjectId && (
-                            <p className="fm-migration-small">
-                              Project:{" "}
-                              {projectChoice(item.originalProjectId) ||
-                                "Not mapped"}
-                            </p>
-                          )}
-                        </div>
-                      </label>
-                    );
-                  })}
+                        <p className="fm-migration-small">{item.reason}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               );
             })}
-          </section>
-
-          <section className="fm-migration-panel">
-            <p className="fm-migration-eyebrow">STEP 5.3</p>
-
-            <h3>Final Confirmation</h3>
 
             <div className="fm-migration-stats">
               <div className="fm-migration-stat">
-                <span>Selected projects</span>
+                <span>Projects selected</span>
                 <strong>{selectedProjects}</strong>
               </div>
 
               <div className="fm-migration-stat">
-                <span>Selected tasks</span>
+                <span>Tasks selected</span>
                 <strong>{selectedTasks}</strong>
               </div>
             </div>
 
-            <p className="fm-migration-muted">
-              Original local records will stay on this device. Existing cloud
-              projects and tasks will not be overwritten.
-            </p>
-
-            <p className="fm-migration-small">
-              Imported projects and tasks will get new creation timestamps
-              because the current cloud creation functions do not preserve their
-              original createdAt values.
-            </p>
-
-            {selected.length > 0 && (
+            {selectedItems.length > 0 && (
               <ul className="fm-migration-selected">
                 {selectedItems.map((item) => (
                   <li key={item.key}>
@@ -773,31 +637,29 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                 disabled={importing || selected.length === 0}
                 onClick={() => setConfirming(true)}
               >
-                Review and confirm import
+                Review workspace import
               </button>
             ) : (
               <div className="fm-migration-panel">
-                <strong>Confirm cloud import</strong>
+                <h3>Confirm workspace import</h3>
 
                 <p className="fm-migration-small">
-                  You are about to import {selectedProjects} projects and{" "}
-                  {selectedTasks} tasks into the signed-in account.
+                  Create {selectedProjects} projects and {selectedTasks} tasks.
+                  Type IMPORT to proceed.
                 </p>
-
-                <p className="fm-migration-small">Type IMPORT to confirm.</p>
 
                 <input
                   type="text"
                   value={confirmationText}
                   disabled={importing}
-                  autoComplete="off"
-                  spellCheck={false}
                   onChange={(event) => setConfirmationText(event.target.value)}
                   placeholder="IMPORT"
-                  aria-label="Import confirmation"
+                  aria-label="Confirm workspace import"
+                  autoComplete="off"
+                  spellCheck={false}
                   style={{
                     width: "100%",
-                    maxWidth: 260,
+                    maxWidth: 250,
                     padding: 10,
                     borderRadius: 8,
                     border: "1px solid var(--fm-border)",
@@ -815,7 +677,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
                       void runImport();
                     }}
                   >
-                    {importing ? "Importing..." : "Confirm import"}
+                    {importing ? "Importing..." : "Confirm workspace import"}
                   </button>
 
                   <button
@@ -834,6 +696,25 @@ export default function MigrationPreview({ userId, onClose }: Props) {
             )}
           </section>
 
+          <InboxImportPanel
+            userId={userId}
+            localItems={local.inbox.items}
+            cloudItems={cloud.inbox}
+            onImported={refresh}
+          />
+
+          <section className="fm-migration-panel">
+            <p className="fm-migration-eyebrow">NEXT STEP</p>
+
+            <h3>Focus History</h3>
+
+            <p className="fm-migration-muted">
+              {local.focusHistory.items.length} local session(s) found. Import
+              is not yet available because older task and project IDs must be
+              validated first.
+            </p>
+          </section>
+
           <div className="fm-migration-actions">
             <button
               type="button"
@@ -841,7 +722,7 @@ export default function MigrationPreview({ userId, onClose }: Props) {
               disabled={importing}
               onClick={() => {
                 setSuccess(null);
-                void refresh();
+                void refresh().catch(() => {});
               }}
             >
               Refresh comparison
