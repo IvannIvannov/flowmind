@@ -704,7 +704,15 @@ export default function PrivateWorkspace({
 
   return (
     <div className="app">
-      <Sidebar currentPage={page} onNavigate={setPage} />
+      <Sidebar
+        currentPage={page}
+        onNavigate={setPage}
+        onReviewLocalData={() => setShowMigration(true)}
+        onSignOut={onSignOut}
+        signingOut={signingOut}
+        signOutDisabled={signingOut || saving || pendingAiCount > 0}
+        saving={saving}
+      />
 
       {inboxLoaded && (
         <QuickAdd
@@ -725,65 +733,6 @@ export default function PrivateWorkspace({
       )}
 
       <main className="content">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          <span
-            style={{
-              color: "var(--fm-muted)",
-              fontSize: 12,
-            }}
-          >
-            Private workspace
-            {saving ? " · Saving..." : ""}
-          </span>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setShowMigration(true)}
-              style={{
-                border: "1px solid var(--fm-border)",
-                borderRadius: 9,
-                padding: "9px 13px",
-                background: "var(--fm-surface)",
-                color: "var(--fm-text)",
-                cursor: "pointer",
-              }}
-            >
-              Review local data
-            </button>
-
-            <button
-              type="button"
-              onClick={onSignOut}
-              disabled={signingOut || saving || pendingAiCount > 0}
-              style={{
-                border: "1px solid var(--fm-border)",
-                borderRadius: 9,
-                padding: "9px 13px",
-                background: "var(--fm-surface)",
-                color: "var(--fm-text)",
-                cursor: "pointer",
-              }}
-            >
-              {signingOut ? "Signing out..." : "Sign out"}
-            </button>
-          </div>
-        </div>
-
         {showMigration && (
           <MigrationPreview
             userId={userId}

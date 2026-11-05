@@ -1,4 +1,4 @@
-/* FLOWMIND - MINIMAL SIDEBAR */
+/* FLOWMIND — MINIMAL SIDEBAR */
 
 .fm-sidebar {
     position: sticky;
@@ -169,7 +169,7 @@
 }
 
 .fm-sidebar-appearance {
-    padding: 0 6px 20px;
+    padding: 0 6px 14px;
 }
 
 .fm-sidebar-appearance>p {
@@ -224,11 +224,59 @@
     color: var(--fm-text);
 }
 
+/* ACCOUNT ACTIONS */
+
+.fm-sidebar-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 6px 14px;
+    border-top: 1px solid var(--fm-border);
+}
+
+.fm-sidebar-action {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    width: 100%;
+    min-height: 41px;
+    padding: 9px 11px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--fm-secondary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 520;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 0.18s ease,
+        color 0.18s ease;
+}
+
+.fm-sidebar-action:hover:not(:disabled) {
+    background: var(--fm-hover);
+    color: var(--fm-text);
+}
+
+.fm-sidebar-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.fm-sidebar-action-label {
+    min-width: 0;
+    white-space: nowrap;
+}
+
+/* FOOTER */
+
 .fm-sidebar-footer {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 19px 10px 3px;
+    padding: 16px 10px 3px;
     border-top: 1px solid var(--fm-border);
 }
 
@@ -248,7 +296,8 @@
     background: var(--fm-secondary);
 }
 
-.fm-sidebar-version {
+.fm-sidebar-version,
+.fm-sidebar-saving {
     color: var(--fm-muted);
     font-size: 10px;
 }
@@ -299,7 +348,12 @@
     .fm-sidebar-section-label,
     .fm-sidebar-link-label,
     .fm-sidebar-active-dot,
-    .fm-sidebar-bottom {
+    .fm-sidebar-appearance>p,
+    .fm-sidebar-theme-switch span,
+    .fm-sidebar-action-label,
+    .fm-sidebar-footer-label,
+    .fm-sidebar-version,
+    .fm-sidebar-saving {
         display: none;
     }
 
@@ -310,6 +364,39 @@
 
     .fm-sidebar-link-icon {
         width: 23px;
+    }
+
+    .fm-sidebar-appearance {
+        padding: 0 0 12px;
+    }
+
+    .fm-sidebar-theme-switch {
+        grid-template-columns: 1fr;
+        gap: 3px;
+        padding: 3px;
+    }
+
+    .fm-sidebar-theme-switch button {
+        padding: 7px;
+        min-height: 33px;
+    }
+
+    .fm-sidebar-actions {
+        padding: 10px 0 12px;
+    }
+
+    .fm-sidebar-action {
+        justify-content: center;
+        padding: 9px 7px;
+    }
+
+    .fm-sidebar-footer {
+        align-items: center;
+        padding: 12px 0 3px;
+    }
+
+    .fm-sidebar-local-status {
+        justify-content: center;
     }
 }
 
