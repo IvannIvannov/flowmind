@@ -1,7 +1,5 @@
 import type { Task, Project, DashboardStats } from "../../types";
-
 import { getTodayKey, isOverdue } from "../../utils/dates";
-
 import "./Dashboard.css";
 
 interface DashboardProps {
@@ -57,6 +55,9 @@ function Dashboard({
 
   const openTasks = tasks.filter((task) => task.status !== "completed").length;
 
+  const completionPercent =
+    stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
   const statisticItems = [
     {
       id: "all",
@@ -94,7 +95,6 @@ function Dashboard({
     .filter((task) => task.status !== "completed")
     .sort((a, b) => {
       const aOverdue = isOverdue(a.dueDate, false);
-
       const bOverdue = isOverdue(b.dueDate, false);
 
       if (aOverdue !== bOverdue) {
@@ -147,7 +147,7 @@ function Dashboard({
   return (
     <div className="fm-dashboard">
       <header className="fm-dashboard-header">
-        <div>
+        <div className="fm-dashboard-header-copy">
           <p className="fm-dashboard-subtitle">{formatToday()}</p>
 
           <h1>
@@ -170,7 +170,10 @@ function Dashboard({
         </button>
       </header>
 
-      <section className="fm-dashboard-overview">
+      <section
+        className="fm-dashboard-overview"
+        aria-label="Workspace highlights"
+      >
         <div className="fm-dashboard-overview-copy">
           <span className="fm-dashboard-overview-label">
             YOUR WORKSPACE AT A GLANCE
@@ -198,7 +201,7 @@ function Dashboard({
 
         <div className="fm-dashboard-summary-panel">
           <div className="fm-dashboard-summary-top">
-            <span>Today&apos;s snapshot</span>
+            <span>Today's snapshot</span>
 
             <span className="fm-dashboard-summary-badge" aria-hidden="true">
               ●
@@ -214,6 +217,22 @@ function Dashboard({
                 {stats.completed} of {stats.total} finished
               </p>
             </div>
+          </div>
+
+          <div
+            className="fm-dashboard-progress-track"
+            role="progressbar"
+            aria-label="Overall task completion"
+            aria-valuenow={completionPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="fm-dashboard-progress-fill"
+              style={{
+                width: `${completionPercent}%`,
+              }}
+            />
           </div>
 
           <div className="fm-dashboard-summary-list">
@@ -287,6 +306,7 @@ function Dashboard({
 
                   <div className="fm-dashboard-task-info">
                     <strong>{task.title}</strong>
+
                     <span>{projectName(task.projectId)}</span>
                   </div>
 
@@ -328,6 +348,7 @@ function Dashboard({
               <span className="fm-dashboard-empty-icon">+</span>
 
               <h3>No projects yet</h3>
+
               <p>Create a project to organize your work.</p>
             </div>
           ) : (
