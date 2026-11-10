@@ -314,7 +314,7 @@
     cursor: not-allowed;
 }
 
-/* FIELDS */
+/* FORM FIELDS */
 
 .fm-auth-form {
     display: flex;
@@ -348,6 +348,10 @@
     font: inherit;
     font-size: 12px;
     outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    box-shadow: none;
+    caret-color: var(--auth-text);
     transition:
         border-color 180ms ease,
         background-color 180ms ease,
@@ -356,6 +360,11 @@
 
 .fm-auth-field input::placeholder {
     color: var(--auth-muted);
+    opacity: 1;
+}
+
+.fm-auth-field input:hover:not(:disabled):not(:focus) {
+    border-color: var(--fm-border-strong, #bebebe);
 }
 
 .fm-auth-field input:focus {
@@ -367,6 +376,59 @@
 .fm-auth-field input:disabled {
     opacity: 0.6;
 }
+
+/* BROWSER AUTOFILL — MATCH FLOWMIND DESIGN */
+
+/*
+  Chromium-based WebViews can apply their own
+  background and text color to saved credentials.
+
+  Keep native autofill enabled while matching
+  the application's light/dark theme.
+*/
+
+.fm-auth-field input:-webkit-autofill,
+.fm-auth-field input:-webkit-autofill:hover,
+.fm-auth-field input:-webkit-autofill:focus,
+.fm-auth-field input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--auth-text);
+    caret-color: var(--auth-text);
+    border-color: var(--auth-border);
+
+    -webkit-box-shadow:
+        0 0 0 1000px var(--auth-panel) inset;
+
+    box-shadow:
+        0 0 0 1000px var(--auth-panel) inset;
+
+    transition:
+        background-color 9999s ease-in-out 0s,
+        border-color 180ms ease,
+        box-shadow 180ms ease;
+}
+
+/* Preserve the normal focus appearance */
+
+.fm-auth-field input:-webkit-autofill:focus {
+    border-color: var(--fm-border-strong, #bebebe);
+
+    -webkit-box-shadow:
+        0 0 0 1000px var(--auth-surface) inset;
+
+    box-shadow:
+        0 0 0 1000px var(--auth-surface) inset,
+        0 0 0 3px #8080800d;
+}
+
+/* Firefox autofill */
+
+.fm-auth-field input:autofill {
+    color: var(--auth-text);
+    caret-color: var(--auth-text);
+    border-color: var(--auth-border);
+}
+
+/* PASSWORD */
 
 .fm-auth-password {
     position: relative;
@@ -395,6 +457,11 @@
 
 .fm-auth-visibility:hover:not(:disabled) {
     color: var(--auth-text);
+}
+
+.fm-auth-visibility:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .fm-auth-hint {
@@ -714,6 +781,8 @@
         font-size: 33px;
     }
 }
+
+/* REDUCED MOTION */
 
 @media (prefers-reduced-motion: reduce) {
 
