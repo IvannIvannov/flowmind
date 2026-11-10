@@ -2,7 +2,7 @@
 
 .fm-quick-add-access {
     position: fixed;
-    top: 25px;
+    top: 69px;
     right: 32px;
     z-index: 90;
 }
@@ -12,18 +12,25 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
+
     height: 42px;
     padding: 0 15px;
+
     border: 1px solid var(--fm-border);
     border-radius: 11px;
+
     background: var(--fm-surface);
     color: var(--fm-text);
+
     font-family: inherit;
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+
     box-shadow: 0 2px 10px #00000008;
+
     cursor: pointer;
+
     transition:
         background-color 0.2s,
         border-color 0.2s;
@@ -38,10 +45,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+
     width: 18px;
     height: 18px;
+
     color: var(--fm-text);
     background: transparent;
+
     font-size: 22px;
     font-weight: 400;
     line-height: 1;
@@ -49,10 +59,13 @@
 
 .fm-quick-add-trigger kbd {
     padding: 5px 7px;
+
     border: 1px solid var(--fm-border);
     border-radius: 6px;
+
     background: var(--fm-panel);
     color: var(--fm-muted);
+
     font-family: inherit;
     font-size: 10px;
     font-weight: 500;
@@ -64,11 +77,14 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
+
     display: flex;
     align-items: flex-start;
     justify-content: center;
+
     padding: min(12vh, 110px) 20px 24px;
     box-sizing: border-box;
+
     background: #00000088;
     overflow-y: auto;
 }
@@ -79,10 +95,13 @@
     width: min(100%, 670px);
     box-sizing: border-box;
     padding: 28px;
+
     border: 1px solid var(--fm-border);
     border-radius: 18px;
+
     background: var(--fm-surface);
     color: var(--fm-text);
+
     box-shadow: 0 22px 70px #00000026;
 }
 
@@ -95,6 +114,7 @@
 
 .fm-quick-add-eyebrow {
     margin: 0 0 10px;
+
     color: var(--fm-muted);
     font-size: 10px;
     font-weight: 700;
@@ -103,6 +123,7 @@
 
 .fm-quick-add-header h2 {
     margin: 0;
+
     color: var(--fm-text);
     font-size: 23px;
     font-weight: 650;
@@ -112,10 +133,13 @@
 .fm-quick-add-close {
     width: 35px;
     height: 35px;
+
     border: 1px solid var(--fm-border);
     border-radius: 9px;
+
     background: var(--fm-panel);
     color: var(--fm-text);
+
     font-size: 15px;
     cursor: pointer;
 }
@@ -126,6 +150,7 @@
 
 .fm-quick-add-description {
     margin: 17px 0 24px;
+
     color: var(--fm-muted);
     font-size: 13px;
     line-height: 1.7;
@@ -134,6 +159,7 @@
 .fm-quick-add-label {
     display: block;
     margin-bottom: 10px;
+
     color: var(--fm-secondary);
     font-size: 12px;
     font-weight: 600;
@@ -143,12 +169,16 @@
     width: 100%;
     min-height: 175px;
     box-sizing: border-box;
+
     padding: 17px;
     resize: vertical;
+
     border: 1px solid var(--fm-border);
     border-radius: 12px;
+
     background: var(--fm-panel);
     color: var(--fm-text);
+
     font-family: inherit;
     font-size: 14px;
     line-height: 1.8;
@@ -160,6 +190,7 @@
 
 .fm-quick-add-counter {
     margin-top: 10px;
+
     color: var(--fm-muted);
     font-size: 11px;
     text-align: right;
@@ -168,10 +199,13 @@
 .fm-quick-add-error {
     margin-top: 16px;
     padding: 12px 14px;
+
     border: 1px solid var(--fm-border-strong);
     border-radius: 9px;
+
     background: var(--fm-panel);
     color: var(--fm-text);
+
     font-size: 12px;
 }
 
@@ -183,8 +217,10 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 17px;
+
     margin-top: 23px;
     padding-top: 20px;
+
     border-top: 1px solid var(--fm-border);
 }
 
@@ -192,6 +228,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
+
     color: var(--fm-muted);
     font-size: 11px;
 }
@@ -199,10 +236,13 @@
 .fm-quick-add-shortcuts kbd {
     display: inline-block;
     padding: 4px 6px;
+
     border: 1px solid var(--fm-border);
     border-radius: 5px;
+
     background: var(--fm-panel);
     color: var(--fm-secondary);
+
     font-family: inherit;
     font-size: 10px;
 }
@@ -216,11 +256,14 @@
 .fm-quick-add-secondary {
     min-height: 42px;
     padding: 11px 17px;
+
     border: 1px solid var(--fm-border);
     border-radius: 9px;
+
     font-family: inherit;
     font-size: 12px;
     font-weight: 600;
+
     cursor: pointer;
 }
 
@@ -255,16 +298,21 @@
     right: 26px;
     bottom: 25px;
     z-index: 900;
+
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 13px;
+
     max-width: min(440px, 90vw);
     padding: 15px 18px;
+
     border: 1px solid var(--fm-border);
     border-radius: 12px;
+
     background: var(--fm-surface);
     color: var(--fm-text);
+
     font-size: 13px;
     box-shadow: 0 12px 35px #00000018;
 }
@@ -273,10 +321,12 @@
     border: none;
     background: transparent;
     color: var(--fm-text);
+
     font-family: inherit;
     font-size: 12px;
     font-weight: 700;
     text-decoration: underline;
+
     cursor: pointer;
 }
 
@@ -294,7 +344,7 @@
 
 @media (max-width: 750px) {
     .fm-quick-add-access {
-        top: 16px;
+        top: 60px;
         right: 16px;
     }
 

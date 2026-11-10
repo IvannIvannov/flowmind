@@ -50,18 +50,23 @@
 html,
 body,
 #root {
+    width: 100%;
+    height: 100%;
     min-width: 0;
-    min-height: 100%;
+    min-height: 0;
     margin: 0;
 }
 
 html {
+    overflow: hidden;
     background: var(--fm-background);
 }
 
 body {
+    overflow: hidden;
     background: var(--fm-background);
     color: var(--fm-text);
+
     font-family:
         Inter,
         -apple-system,
@@ -69,8 +74,13 @@ body {
         "Segoe UI",
         Arial,
         sans-serif;
+
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+}
+
+#root {
+    overflow: hidden;
 }
 
 button,
@@ -80,28 +90,147 @@ select {
     font-family: inherit;
 }
 
-/* APP LAYOUT */
+/* DESKTOP APPLICATION SHELL */
+
+.fm-desktop-app {
+    display: flex;
+    flex-direction: column;
+
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background: var(--fm-background);
+    color: var(--fm-text);
+}
+
+/*
+  The title bar occupies 44px.
+  All other application content stays below it.
+*/
+
+.fm-desktop-app>.fm-titlebar {
+    flex: 0 0 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+}
+
+.fm-desktop-content {
+    position: relative;
+
+    display: flex;
+    flex-direction: column;
+
+    flex: 1 1 auto;
+
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background: var(--fm-background);
+}
+
+.fm-desktop-content>* {
+    min-height: 0;
+}
+
+/* MAIN WORKSPACE LAYOUT */
 
 .app {
     display: flex;
+
+    flex: 1 1 auto;
+
     width: 100%;
-    min-height: 100vh;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
     background: var(--fm-background);
+
     transition: background-color 0.2s ease;
 }
 
-.content {
-    flex: 1;
-    min-width: 0;
-    min-height: 100vh;
-    padding: 88px 48px 45px;
-    background: var(--fm-background);
-    color: var(--fm-text);
+/* SIDEBAR HEIGHT INSIDE DESKTOP WINDOW */
+
+.fm-desktop-content .fm-sidebar {
+    position: relative;
+
+    top: auto;
+
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+
+    flex-shrink: 0;
+
     overflow-x: hidden;
     overflow-y: auto;
+}
+
+/* PAGE CONTENT */
+
+.content {
+    flex: 1 1 auto;
+
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+
+    padding: 88px 48px 45px;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    background: var(--fm-background);
+    color: var(--fm-text);
+
+    overscroll-behavior: contain;
+
     transition:
         background-color 0.2s ease,
         color 0.2s ease;
+}
+
+/* AUTHENTICATION INSIDE DESKTOP WINDOW */
+
+/*
+  Login/Register previously used the full viewport.
+  Inside the desktop shell it must use the
+  remaining available height instead.
+*/
+
+.fm-desktop-content .fm-auth-gate {
+    flex: 1 1 auto;
+
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+.fm-desktop-content .fm-auth-page {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+.fm-desktop-content .fm-auth-layout,
+.fm-desktop-content .fm-auth-shell {
+    height: 100%;
+    min-height: 0;
 }
 
 /* RESERVED SPACE FOR QUICK ADD AND GLOBAL SEARCH */
@@ -113,10 +242,10 @@ select {
 
 /*
   Temporary compatibility:
-  Other pages still have their original styles.
+
+  Other pages retain their existing styles.
   Their complete light/dark redesign follows
-  page by page so existing functionality remains
-  intact during the transition.
+  page by page so functionality remains intact.
 */
 
 /* SCROLLBARS */
@@ -167,6 +296,8 @@ select {
         padding: 75px 16px 26px;
     }
 }
+
+/* REDUCED MOTION */
 
 @media (prefers-reduced-motion: reduce) {
 
