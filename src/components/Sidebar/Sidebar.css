@@ -1,4 +1,4 @@
-/* FLOWMIND — MINIMAL SIDEBAR */
+/* FLOWMIND - MINIMAL SIDEBAR */
 
 .fm-sidebar {
     position: sticky;
@@ -43,9 +43,22 @@
     width: 39px;
     height: 39px;
     flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid transparent;
     border-radius: 12px;
-    background: var(--fm-text);
-    color: var(--fm-contrast);
+
+    /* Keep brand colors consistent in both themes */
+    background: #171717;
+    color: #ffffff;
+}
+
+.fm-sidebar-logo img {
+    display: block;
+    width: 27px;
+    height: 27px;
+    flex-shrink: 0;
+    object-fit: contain;
+    filter: none;
 }
 
 .fm-sidebar-logo span {
@@ -169,7 +182,7 @@
 }
 
 .fm-sidebar-appearance {
-    padding: 0 6px 14px;
+    padding: 0 6px 20px;
 }
 
 .fm-sidebar-appearance>p {
@@ -224,59 +237,13 @@
     color: var(--fm-text);
 }
 
-/* ACCOUNT ACTIONS */
-
-.fm-sidebar-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 11px 6px 14px;
-    border-top: 1px solid var(--fm-border);
-}
-
-.fm-sidebar-action {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-    width: 100%;
-    min-height: 41px;
-    padding: 9px 11px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--fm-secondary);
-    font: inherit;
-    font-size: 12px;
-    font-weight: 520;
-    text-align: left;
-    cursor: pointer;
-    transition:
-        background-color 0.18s ease,
-        color 0.18s ease;
-}
-
-.fm-sidebar-action:hover:not(:disabled) {
-    background: var(--fm-hover);
-    color: var(--fm-text);
-}
-
-.fm-sidebar-action:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-.fm-sidebar-action-label {
-    min-width: 0;
-    white-space: nowrap;
-}
-
 /* FOOTER */
 
 .fm-sidebar-footer {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 16px 10px 3px;
+    padding: 19px 10px 3px;
     border-top: 1px solid var(--fm-border);
 }
 
@@ -296,11 +263,24 @@
     background: var(--fm-secondary);
 }
 
-.fm-sidebar-version,
-.fm-sidebar-saving {
+.fm-sidebar-version {
     color: var(--fm-muted);
     font-size: 10px;
 }
+
+/* DARK MODE BRAND REFINEMENT */
+
+html[data-theme="dark"] .fm-sidebar-logo {
+    background: #171717;
+    border-color: #363636;
+    color: #ffffff;
+}
+
+html[data-theme="dark"] .fm-sidebar-logo img {
+    filter: none;
+}
+
+/* ACCESSIBILITY */
 
 .fm-sidebar button:focus-visible {
     outline: 2px solid var(--fm-text);
@@ -348,12 +328,7 @@
     .fm-sidebar-section-label,
     .fm-sidebar-link-label,
     .fm-sidebar-active-dot,
-    .fm-sidebar-appearance>p,
-    .fm-sidebar-theme-switch span,
-    .fm-sidebar-action-label,
-    .fm-sidebar-footer-label,
-    .fm-sidebar-version,
-    .fm-sidebar-saving {
+    .fm-sidebar-bottom {
         display: none;
     }
 
@@ -364,39 +339,6 @@
 
     .fm-sidebar-link-icon {
         width: 23px;
-    }
-
-    .fm-sidebar-appearance {
-        padding: 0 0 12px;
-    }
-
-    .fm-sidebar-theme-switch {
-        grid-template-columns: 1fr;
-        gap: 3px;
-        padding: 3px;
-    }
-
-    .fm-sidebar-theme-switch button {
-        padding: 7px;
-        min-height: 33px;
-    }
-
-    .fm-sidebar-actions {
-        padding: 10px 0 12px;
-    }
-
-    .fm-sidebar-action {
-        justify-content: center;
-        padding: 9px 7px;
-    }
-
-    .fm-sidebar-footer {
-        align-items: center;
-        padding: 12px 0 3px;
-    }
-
-    .fm-sidebar-local-status {
-        justify-content: center;
     }
 }
 

@@ -42,8 +42,7 @@
     min-width: 0;
     min-height: 0;
     height: 100%;
-    transition:
-        transform 820ms var(--auth-transition);
+    transition: transform 820ms var(--auth-transition);
 }
 
 .fm-auth-editorial {
@@ -83,6 +82,8 @@
     flex-shrink: 0;
 }
 
+/* BRAND */
+
 .fm-auth-brand {
     display: inline-flex;
     align-items: center;
@@ -96,12 +97,21 @@
     width: 38px;
     height: 38px;
     flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid transparent;
     border-radius: 11px;
-    background: var(--auth-text);
-    color: var(--fm-contrast, #ffffff);
-    font-size: 24px;
-    font-weight: 750;
-    letter-spacing: -2px;
+
+    /* Fixed brand colors in both themes */
+    background: #171717;
+    color: #ffffff;
+}
+
+.fm-auth-logo img {
+    display: block;
+    width: 27px;
+    height: 27px;
+    object-fit: contain;
+    filter: none;
 }
 
 .fm-auth-brand-name {
@@ -114,6 +124,20 @@
 .fm-auth-brand-name>span {
     color: var(--auth-muted);
 }
+
+/* DARK MODE BRAND */
+
+html[data-theme="dark"] .fm-auth-logo {
+    background: #171717;
+    border-color: #363636;
+    color: #ffffff;
+}
+
+html[data-theme="dark"] .fm-auth-logo img {
+    filter: none;
+}
+
+/* EDITORIAL COPY */
 
 .fm-auth-editorial-center {
     display: flex;
@@ -377,15 +401,7 @@
     opacity: 0.6;
 }
 
-/* BROWSER AUTOFILL — MATCH FLOWMIND DESIGN */
-
-/*
-  Chromium-based WebViews can apply their own
-  background and text color to saved credentials.
-
-  Keep native autofill enabled while matching
-  the application's light/dark theme.
-*/
+/* BROWSER AUTOFILL */
 
 .fm-auth-field input:-webkit-autofill,
 .fm-auth-field input:-webkit-autofill:hover,
@@ -407,8 +423,6 @@
         box-shadow 180ms ease;
 }
 
-/* Preserve the normal focus appearance */
-
 .fm-auth-field input:-webkit-autofill:focus {
     border-color: var(--fm-border-strong, #bebebe);
 
@@ -419,8 +433,6 @@
         0 0 0 1000px var(--auth-surface) inset,
         0 0 0 3px #8080800d;
 }
-
-/* Firefox autofill */
 
 .fm-auth-field input:autofill {
     color: var(--auth-text);
