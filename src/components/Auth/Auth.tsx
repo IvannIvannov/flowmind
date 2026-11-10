@@ -58,7 +58,16 @@ function Brand() {
   return (
     <div className="fm-auth-brand">
       <span className="fm-auth-logo" aria-hidden="true">
-        f
+        <img
+          src="/flowmind-mark.svg"
+          alt=""
+          width={27}
+          height={27}
+          style={{
+            display: "block",
+            objectFit: "contain",
+          }}
+        />
       </span>
 
       <span className="fm-auth-brand-name">
@@ -151,6 +160,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -167,7 +177,9 @@ export default function Auth({ onAuthenticated }: AuthProps) {
   }
 
   function changeScreen(next: AuthScreen) {
-    if (loading || screen === next) return;
+    if (loading || screen === next) {
+      return;
+    }
 
     resetMessagesAndPasswords();
     setScreen(next);
@@ -175,6 +187,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (loading) return;
 
     setLoading(true);
@@ -189,7 +202,9 @@ export default function Auth({ onAuthenticated }: AuthProps) {
         },
       );
 
-      if (authError) throw authError;
+      if (authError) {
+        throw authError;
+      }
 
       if (!data.session) {
         throw new Error("Sign in was unsuccessful. Please try again.");
@@ -215,6 +230,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (loading) return;
 
     setError("");
@@ -248,7 +264,9 @@ export default function Auth({ onAuthenticated }: AuthProps) {
         },
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        throw authError;
+      }
 
       setPassword("");
       setConfirmPassword("");
@@ -291,7 +309,9 @@ export default function Auth({ onAuthenticated }: AuthProps) {
         email: email.trim().toLowerCase(),
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        throw authError;
+      }
 
       setNotice(
         "If the address is eligible, another confirmation email has been sent.",
@@ -306,9 +326,9 @@ export default function Auth({ onAuthenticated }: AuthProps) {
   return (
     <div className="fm-auth-page">
       <div
-        className={`fm-auth-layout ${
-          isRegister ? "is-register" : "is-login"
-        } ${isCheckEmail ? "is-check-email" : ""}`}
+        className={`fm-auth-layout ${isRegister ? "is-register" : "is-login"} ${
+          isCheckEmail ? "is-check-email" : ""
+        }`}
       >
         <EditorialPanel
           screen={screen}
@@ -358,6 +378,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
                 <div className="fm-auth-confirmation">
                   <div className="fm-auth-email-box">
                     <span>CONFIRMATION EMAIL</span>
+
                     <strong>{email}</strong>
 
                     <p>
@@ -448,6 +469,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
 
                         <input
                           id="fm-auth-name"
+                          name="name"
                           type="text"
                           autoComplete="name"
                           value={name}
@@ -465,8 +487,11 @@ export default function Auth({ onAuthenticated }: AuthProps) {
 
                       <input
                         id="fm-auth-email"
+                        name="email"
                         type="email"
                         autoComplete="email"
+                        autoCapitalize="none"
+                        spellCheck={false}
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                         placeholder="you@example.com"
@@ -482,6 +507,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
                       <div className="fm-auth-password">
                         <input
                           id="fm-auth-password"
+                          name="password"
                           type={showPassword ? "text" : "password"}
                           autoComplete={
                             isRegister ? "new-password" : "current-password"
@@ -516,6 +542,7 @@ export default function Auth({ onAuthenticated }: AuthProps) {
 
                         <input
                           id="fm-auth-confirm"
+                          name="confirmPassword"
                           type={showPassword ? "text" : "password"}
                           autoComplete="new-password"
                           value={confirmPassword}

@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
+
 import type { Page } from "../../types";
+
 import "./Sidebar.css";
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
-  onReviewLocalData: () => void;
-  onSignOut: () => void;
-  signingOut: boolean;
-  signOutDisabled: boolean;
-  saving?: boolean;
+  onReviewLocalData?: () => void;
+  onSignOut?: () => void;
+  signingOut?: boolean;
 }
 
 type Theme = "light" | "dark";
@@ -23,9 +23,7 @@ type IconName =
   | "calendar"
   | "ai"
   | "sun"
-  | "moon"
-  | "database"
-  | "logout";
+  | "moon";
 
 interface NavigationItem {
   id: Page;
@@ -36,13 +34,41 @@ interface NavigationItem {
 const STORAGE_KEY = "flowmind-theme";
 
 const NAVIGATION: NavigationItem[] = [
-  { id: "dashboard", label: "Overview", icon: "dashboard" },
-  { id: "my-day", label: "My Day", icon: "day" },
-  { id: "inbox", label: "Inbox", icon: "inbox" },
-  { id: "tasks", label: "My Tasks", icon: "tasks" },
-  { id: "projects", label: "Projects", icon: "projects" },
-  { id: "calendar", label: "Calendar", icon: "calendar" },
-  { id: "ai", label: "AI Assistant", icon: "ai" },
+  {
+    id: "dashboard",
+    label: "Overview",
+    icon: "dashboard",
+  },
+  {
+    id: "my-day",
+    label: "My Day",
+    icon: "day",
+  },
+  {
+    id: "inbox",
+    label: "Inbox",
+    icon: "inbox",
+  },
+  {
+    id: "tasks",
+    label: "My Tasks",
+    icon: "tasks",
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    icon: "projects",
+  },
+  {
+    id: "calendar",
+    label: "Calendar",
+    icon: "calendar",
+  },
+  {
+    id: "ai",
+    label: "AI Assistant",
+    icon: "ai",
+  },
 ];
 
 function readTheme(): Theme {
@@ -87,7 +113,11 @@ function NavIcon({ name }: { name: IconName }) {
       break;
 
     case "tasks":
-      shape = <path d="m4 7 2 2 4-4M13 7h7M4 17l2 2 4-4M13 17h7" />;
+      shape = (
+        <>
+          <path d="m4 7 2 2 4-4M13 7h7M4 17l2 2 4-4M13 17h7" />
+        </>
+      );
       break;
 
     case "projects":
@@ -123,25 +153,6 @@ function NavIcon({ name }: { name: IconName }) {
     case "moon":
       shape = <path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z" />;
       break;
-
-    case "database":
-      shape = (
-        <>
-          <ellipse cx="12" cy="5" rx="8" ry="3" />
-          <path d="M4 5v7c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
-          <path d="M4 12v7c0 1.66 3.58 3 8 3s8-1.34 8-3v-7" />
-        </>
-      );
-      break;
-
-    case "logout":
-      shape = (
-        <>
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-          <path d="m16 17 5-5-5-5M21 12H9" />
-        </>
-      );
-      break;
   }
 
   return (
@@ -161,19 +172,18 @@ function NavIcon({ name }: { name: IconName }) {
   );
 }
 
-export default function Sidebar({
+function Sidebar({
   currentPage,
   onNavigate,
   onReviewLocalData,
   onSignOut,
-  signingOut,
-  signOutDisabled,
-  saving = false,
+  signingOut = false,
 }: SidebarProps) {
   const [theme, setTheme] = useState<Theme>(readTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+
     document.documentElement.style.colorScheme = theme;
 
     try {
@@ -187,7 +197,16 @@ export default function Sidebar({
     <aside className="fm-sidebar">
       <div className="fm-sidebar-brand">
         <div className="fm-sidebar-logo" aria-hidden="true">
-          <span>f</span>
+          <img
+            src="/flowmind-mark.svg"
+            alt=""
+            width={27}
+            height={27}
+            style={{
+              display: "block",
+              objectFit: "contain",
+            }}
+          />
         </div>
 
         <div className="fm-sidebar-brand-text">
@@ -261,53 +280,51 @@ export default function Sidebar({
           </div>
         </div>
 
-        <div className="fm-sidebar-actions" aria-label="Account actions">
-          <button
-            type="button"
-            className="fm-sidebar-action"
-            onClick={onReviewLocalData}
-            title="Review local data"
+        {(onReviewLocalData || onSignOut) && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              padding: "0 6px 17px",
+            }}
           >
-            <span className="fm-sidebar-link-icon">
-              <NavIcon name="database" />
-            </span>
+            {onReviewLocalData && (
+              <button
+                type="button"
+                className="fm-sidebar-link"
+                onClick={onReviewLocalData}
+              >
+                <span className="fm-sidebar-link-label">Review local data</span>
+              </button>
+            )}
 
-            <span className="fm-sidebar-action-label">Review local data</span>
-          </button>
-
-          <button
-            type="button"
-            className="fm-sidebar-action fm-sidebar-action-signout"
-            onClick={onSignOut}
-            disabled={signOutDisabled}
-            title={signingOut ? "Signing out..." : "Sign out"}
-          >
-            <span className="fm-sidebar-link-icon">
-              <NavIcon name="logout" />
-            </span>
-
-            <span className="fm-sidebar-action-label">
-              {signingOut ? "Signing out..." : "Sign out"}
-            </span>
-          </button>
-        </div>
+            {onSignOut && (
+              <button
+                type="button"
+                className="fm-sidebar-link"
+                onClick={onSignOut}
+                disabled={signingOut}
+              >
+                <span className="fm-sidebar-link-label">
+                  {signingOut ? "Signing out..." : "Sign out"}
+                </span>
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="fm-sidebar-footer">
           <div className="fm-sidebar-local-status">
             <span className="fm-sidebar-status-dot" />
-
-            <span className="fm-sidebar-footer-label">Local workspace</span>
+            <span>Local workspace</span>
           </div>
 
           <span className="fm-sidebar-version">Version 1.0.0</span>
-
-          {saving && (
-            <span className="fm-sidebar-saving" role="status">
-              Saving...
-            </span>
-          )}
         </div>
       </div>
     </aside>
   );
 }
+
+export default Sidebar;
