@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 
 import type { Page } from "../../types";
 
@@ -98,7 +99,7 @@ function NavIcon({ name }: { name: IconName }) {
       shape = (
         <>
           <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </>
       );
       break;
@@ -183,7 +184,6 @@ function Sidebar({
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-
     document.documentElement.style.colorScheme = theme;
 
     try {
@@ -192,6 +192,48 @@ function Sidebar({
       console.warn("FlowMind: could not save theme", error);
     }
   }, [theme]);
+
+  function changeTheme(nextTheme: Theme) {
+    if (nextTheme === theme) return;
+
+    const root = document.documentElement;
+
+    function updateTheme() {
+      root.setAttribute("data-theme", nextTheme);
+      root.style.colorScheme = nextTheme;
+
+      flushSync(() => {
+        setTheme(nextTheme);
+      });
+    }
+
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (reduceMotion || typeof document.startViewTransition !== "function") {
+      updateTheme();
+      return;
+    }
+
+    root.classList.add("fm-theme-snapshot");
+
+    try {
+      const transition = document.startViewTransition(updateTheme);
+
+      const cleanup = () => {
+        root.classList.remove("fm-theme-snapshot");
+      };
+
+      void transition.finished.then(cleanup, cleanup);
+    } catch (error) {
+      root.classList.remove("fm-theme-snapshot");
+
+      console.error("FlowMind: theme transition failed", error);
+
+      updateTheme();
+    }
+  }
 
   return (
     <aside className="fm-sidebar">
@@ -260,7 +302,7 @@ function Sidebar({
               type="button"
               className={theme === "light" ? "active" : ""}
               aria-pressed={theme === "light"}
-              onClick={() => setTheme("light")}
+              onClick={() => changeTheme("light")}
               title="Light mode"
             >
               <NavIcon name="sun" />
@@ -271,7 +313,7 @@ function Sidebar({
               type="button"
               className={theme === "dark" ? "active" : ""}
               aria-pressed={theme === "dark"}
-              onClick={() => setTheme("dark")}
+              onClick={() => changeTheme("dark")}
               title="Dark mode"
             >
               <NavIcon name="moon" />
