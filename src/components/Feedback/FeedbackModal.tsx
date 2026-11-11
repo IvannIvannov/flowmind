@@ -15,6 +15,22 @@ interface FeedbackModalProps {
 
 const APP_VERSION = "1.0.0";
 
+function SmilingFace() {
+  return (
+    <div className="fm-feedback-face" aria-hidden="true">
+      <svg viewBox="0 0 88 88" width="88" height="88" fill="none">
+        <circle cx="44" cy="44" r="39" className="fm-feedback-face-outline" />
+
+        <path d="M31 30V38" className="fm-feedback-face-eye" />
+
+        <path d="M57 30V38" className="fm-feedback-face-eye" />
+
+        <path d="M29 55Q44 55 59 55" className="fm-feedback-face-mouth" />
+      </svg>
+    </div>
+  );
+}
+
 export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
   const [category, setCategory] = useState<FeedbackCategory>("bug");
 
@@ -79,9 +95,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
     return () => {
       document.body.style.overflow = previousOverflow;
-
       document.removeEventListener("keydown", handleKeyDown);
-
       previousFocus?.focus();
     };
   }, [open, onClose, success]);
@@ -200,7 +214,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
         {success ? (
           <div className="fm-feedback-success" role="status">
-            <div className="fm-feedback-success-icon">✓</div>
+            <SmilingFace />
 
             <h3>Thank you for your feedback.</h3>
 
