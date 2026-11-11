@@ -52,7 +52,6 @@
 
     width: 39px;
     height: 39px;
-
     flex-shrink: 0;
     overflow: hidden;
 
@@ -65,10 +64,8 @@
 
 .fm-sidebar-logo img {
     display: block;
-
     width: 27px;
     height: 27px;
-
     flex-shrink: 0;
     object-fit: contain;
     filter: none;
@@ -76,7 +73,6 @@
 
 .fm-sidebar-logo span {
     margin-top: -2px;
-
     font-family: inherit;
     font-size: 24px;
     font-weight: 750;
@@ -192,8 +188,8 @@
 .fm-sidebar-active-dot {
     width: 5px;
     height: 5px;
-
     flex-shrink: 0;
+
     border-radius: 50%;
     background: var(--fm-text);
 }
@@ -294,22 +290,68 @@
     border-top: 1px solid var(--fm-border);
 }
 
+/* WORKSPACE CONNECTION STATUS */
+
 .fm-sidebar-local-status {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
+
+    min-height: 20px;
 
     color: var(--fm-secondary);
     font-size: 11px;
+    font-weight: 500;
 }
 
 .fm-sidebar-status-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
 
     flex-shrink: 0;
+
     border-radius: 50%;
-    background: var(--fm-secondary);
+
+    background: var(--fm-muted);
+
+    transition:
+        background-color 0.25s ease,
+        box-shadow 0.25s ease;
+}
+
+/* CONNECTED — GREEN */
+
+.fm-sidebar-status-dot.connected {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px #22c55e22;
+}
+
+/* CHECKING — AMBER */
+
+.fm-sidebar-status-dot.checking {
+    background: #eab308;
+    box-shadow: 0 0 0 3px #eab30822;
+
+    animation: fm-status-checking 1.3s ease-in-out infinite;
+}
+
+/* CONNECTION ISSUE — RED */
+
+.fm-sidebar-status-dot.issue {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px #ef444422;
+}
+
+@keyframes fm-status-checking {
+
+    0%,
+    100% {
+        opacity: 0.55;
+    }
+
+    50% {
+        opacity: 1;
+    }
 }
 
 .fm-sidebar-version {
@@ -331,14 +373,6 @@ html[data-theme="dark"] .fm-sidebar-logo img {
 
 /* SYNCHRONIZED THEME TRANSITION */
 
-/*
-  During a view transition, change the actual
-  interface immediately behind two snapshots.
-
-  This prevents cards, backgrounds and text
-  from animating at different speeds.
-*/
-
 html.fm-theme-snapshot,
 html.fm-theme-snapshot body,
 html.fm-theme-snapshot body *,
@@ -347,16 +381,14 @@ html.fm-theme-snapshot body *::after {
     transition: none !important;
 }
 
-/* SINGLE FULL-WINDOW CROSSFADE */
+/* FULL-WINDOW THEME CROSSFADE */
 
 ::view-transition-old(root) {
-    animation:
-        300ms ease-in-out both fm-theme-fade-out;
+    animation: 300ms ease-in-out both fm-theme-fade-out;
 }
 
 ::view-transition-new(root) {
-    animation:
-        300ms ease-in-out both fm-theme-fade-in;
+    animation: 300ms ease-in-out both fm-theme-fade-in;
 }
 
 @keyframes fm-theme-fade-out {
@@ -392,7 +424,6 @@ html.fm-theme-snapshot body *::after {
     .fm-sidebar {
         width: 215px;
         min-width: 215px;
-
         padding-right: 12px;
         padding-left: 12px;
     }
@@ -462,8 +493,10 @@ html.fm-theme-snapshot body *::after {
     .fm-sidebar,
     .fm-sidebar-link,
     .fm-sidebar-theme-switch,
-    .fm-sidebar-theme-switch button {
+    .fm-sidebar-theme-switch button,
+    .fm-sidebar-status-dot {
         transition: none !important;
+        animation: none !important;
     }
 
     ::view-transition-old(root),

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import type { Page } from "../../types";
+import { supabase } from "../../lib/supabase";
 
 import "./Sidebar.css";
 
@@ -16,6 +17,8 @@ interface SidebarProps {
 }
 
 type Theme = "light" | "dark";
+
+type WorkspaceStatus = "checking" | "connected" | "issue";
 
 type IconName =
   | "dashboard"
@@ -35,6 +38,7 @@ interface NavigationItem {
 }
 
 const STORAGE_KEY = "flowmind-theme";
+const STATUS_CHECK_INTERVAL = 60_000;
 
 const NAVIGATION: NavigationItem[] = [
   { id: "dashboard", label: "Overview", icon: "dashboard" },
@@ -73,7 +77,7 @@ function NavIcon({ name }: { name: IconName }) {
       shape = (
         <>
           <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </>
       );
       break;
@@ -158,8 +162,14 @@ function Sidebar({
 }: SidebarProps) {
   const [theme, setTheme] = useState<Theme>(readTheme);
 
+  const [workspaceStatus, setWorkspaceStatus] =
+    useState<WorkspaceStatus>("checking");
+
+  const checkingRef = useRef(false);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+
     document.documentElement.style.colorScheme = theme;
 
     try {
@@ -169,8 +179,92 @@ function Sidebar({
     }
   }, [theme]);
 
+  useEffect(() => {
+    let active = true;
+    let requestId = 0;
+
+    async function checkConnection() {
+      if (!active || checkingRef.current) {
+        return;
+      }
+
+      if (!navigator.onLine) {
+        requestId += 1;
+        setWorkspaceStatus("issue");
+        return;
+      }
+
+      checkingRef.current = true;
+      const currentRequest = ++requestId;
+
+      setWorkspaceStatus("checking");
+
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
+        if (!active || currentRequest !== requestId) {
+          return;
+        }
+
+        setWorkspaceStatus(!error && user ? "connected" : "issue");
+      } catch (error) {
+        if (active && currentRequest === requestId) {
+          console.warn("FlowMind: connection check failed", error);
+
+          setWorkspaceStatus("issue");
+        }
+      } finally {
+        checkingRef.current = false;
+      }
+    }
+
+    function handleOnline() {
+      void checkConnection();
+    }
+
+    function handleOffline() {
+      requestId += 1;
+      setWorkspaceStatus("issue");
+    }
+
+    function handleFocus() {
+      if (!document.hidden) {
+        void checkConnection();
+      }
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("focus", handleFocus);
+
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) {
+        void checkConnection();
+      }
+    }, STATUS_CHECK_INTERVAL);
+
+    void checkConnection();
+
+    return () => {
+      active = false;
+      requestId += 1;
+      checkingRef.current = false;
+
+      window.clearInterval(intervalId);
+
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   function changeTheme(nextTheme: Theme) {
-    if (nextTheme === theme) return;
+    if (nextTheme === theme) {
+      return;
+    }
 
     const root = document.documentElement;
 
@@ -210,6 +304,20 @@ function Sidebar({
       updateTheme();
     }
   }
+
+  const statusLabel =
+    workspaceStatus === "connected"
+      ? "Connected"
+      : workspaceStatus === "checking"
+        ? "Checking connection..."
+        : "Connection issue";
+
+  const statusDescription =
+    workspaceStatus === "connected"
+      ? "Supabase connection verified"
+      : workspaceStatus === "checking"
+        ? "Checking your Supabase connection"
+        : "Unable to verify your Supabase connection";
 
   return (
     <aside className="fm-sidebar">
@@ -333,9 +441,18 @@ function Sidebar({
         )}
 
         <div className="fm-sidebar-footer">
-          <div className="fm-sidebar-local-status">
-            <span className="fm-sidebar-status-dot" />
-            <span>Local workspace</span>
+          <div
+            className="fm-sidebar-local-status"
+            title={statusDescription}
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className={`fm-sidebar-status-dot ${workspaceStatus}`}
+              aria-hidden="true"
+            />
+
+            <span>{statusLabel}</span>
           </div>
 
           <span className="fm-sidebar-version">Version 1.0.0</span>
