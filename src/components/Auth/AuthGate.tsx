@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "../../lib/supabase";
+
 import Auth from "./Auth";
 import PrivateWorkspace from "./PrivateWorkspace";
+import LoadingScreen from "./LoadingScreen";
+
 import "./Auth.css";
 
 type AuthState =
@@ -12,7 +15,9 @@ type AuthState =
   | { status: "signed-in"; user: User };
 
 export default function AuthGate() {
-  const [authState, setAuthState] = useState<AuthState>({ status: "checking" });
+  const [authState, setAuthState] = useState<AuthState>({
+    status: "checking",
+  });
 
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
@@ -131,16 +136,7 @@ export default function AuthGate() {
   }
 
   if (authState.status === "checking") {
-    return (
-      <div className="fm-auth-page">
-        <div className="fm-auth-brand">
-          <span className="fm-auth-logo">F.</span>
-          <span>FlowMind</span>
-        </div>
-
-        <p className="fm-auth-bottom">Checking your account...</p>
-      </div>
-    );
+    return <LoadingScreen message="Preparing your workspace" />;
   }
 
   if (authState.status === "signed-out") {

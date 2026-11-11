@@ -11,6 +11,8 @@ interface SidebarProps {
   onReviewLocalData?: () => void;
   onSignOut?: () => void;
   signingOut?: boolean;
+  signOutDisabled?: boolean;
+  saving?: boolean;
 }
 
 type Theme = "light" | "dark";
@@ -35,41 +37,13 @@ interface NavigationItem {
 const STORAGE_KEY = "flowmind-theme";
 
 const NAVIGATION: NavigationItem[] = [
-  {
-    id: "dashboard",
-    label: "Overview",
-    icon: "dashboard",
-  },
-  {
-    id: "my-day",
-    label: "My Day",
-    icon: "day",
-  },
-  {
-    id: "inbox",
-    label: "Inbox",
-    icon: "inbox",
-  },
-  {
-    id: "tasks",
-    label: "My Tasks",
-    icon: "tasks",
-  },
-  {
-    id: "projects",
-    label: "Projects",
-    icon: "projects",
-  },
-  {
-    id: "calendar",
-    label: "Calendar",
-    icon: "calendar",
-  },
-  {
-    id: "ai",
-    label: "AI Assistant",
-    icon: "ai",
-  },
+  { id: "dashboard", label: "Overview", icon: "dashboard" },
+  { id: "my-day", label: "My Day", icon: "day" },
+  { id: "inbox", label: "Inbox", icon: "inbox" },
+  { id: "tasks", label: "My Tasks", icon: "tasks" },
+  { id: "projects", label: "Projects", icon: "projects" },
+  { id: "calendar", label: "Calendar", icon: "calendar" },
+  { id: "ai", label: "AI Assistant", icon: "ai" },
 ];
 
 function readTheme(): Theme {
@@ -99,7 +73,7 @@ function NavIcon({ name }: { name: IconName }) {
       shape = (
         <>
           <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </>
       );
       break;
@@ -179,6 +153,8 @@ function Sidebar({
   onReviewLocalData,
   onSignOut,
   signingOut = false,
+  signOutDisabled = false,
+  saving = false,
 }: SidebarProps) {
   const [theme, setTheme] = useState<Theme>(readTheme);
 
@@ -346,7 +322,7 @@ function Sidebar({
                 type="button"
                 className="fm-sidebar-link"
                 onClick={onSignOut}
-                disabled={signingOut}
+                disabled={signingOut || signOutDisabled || saving}
               >
                 <span className="fm-sidebar-link-label">
                   {signingOut ? "Signing out..." : "Sign out"}
