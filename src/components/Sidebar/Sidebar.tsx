@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import { flushSync } from "react-dom";
 
 import type { Page } from "../../types";
 import { supabase } from "../../lib/supabase";
+
+import FeedbackModal from "../Feedback/FeedbackModal";
 
 import "./Sidebar.css";
 
@@ -28,6 +31,7 @@ type IconName =
   | "projects"
   | "calendar"
   | "ai"
+  | "help"
   | "sun"
   | "moon";
 
@@ -41,13 +45,41 @@ const STORAGE_KEY = "flowmind-theme";
 const STATUS_CHECK_INTERVAL = 60_000;
 
 const NAVIGATION: NavigationItem[] = [
-  { id: "dashboard", label: "Overview", icon: "dashboard" },
-  { id: "my-day", label: "My Day", icon: "day" },
-  { id: "inbox", label: "Inbox", icon: "inbox" },
-  { id: "tasks", label: "My Tasks", icon: "tasks" },
-  { id: "projects", label: "Projects", icon: "projects" },
-  { id: "calendar", label: "Calendar", icon: "calendar" },
-  { id: "ai", label: "AI Assistant", icon: "ai" },
+  {
+    id: "dashboard",
+    label: "Overview",
+    icon: "dashboard",
+  },
+  {
+    id: "my-day",
+    label: "My Day",
+    icon: "day",
+  },
+  {
+    id: "inbox",
+    label: "Inbox",
+    icon: "inbox",
+  },
+  {
+    id: "tasks",
+    label: "My Tasks",
+    icon: "tasks",
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    icon: "projects",
+  },
+  {
+    id: "calendar",
+    label: "Calendar",
+    icon: "calendar",
+  },
+  {
+    id: "ai",
+    label: "AI Assistant",
+    icon: "ai",
+  },
 ];
 
 function readTheme(): Theme {
@@ -77,7 +109,7 @@ function NavIcon({ name }: { name: IconName }) {
       shape = (
         <>
           <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </>
       );
       break;
@@ -117,6 +149,16 @@ function NavIcon({ name }: { name: IconName }) {
     case "ai":
       shape = (
         <path d="m12 2 1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9L12 2ZM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8L19 17Z" />
+      );
+      break;
+
+    case "help":
+      shape = (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.8-2.5 2-2.5 4" />
+          <path d="M12 17h.01" />
+        </>
       );
       break;
 
@@ -165,7 +207,13 @@ function Sidebar({
   const [workspaceStatus, setWorkspaceStatus] =
     useState<WorkspaceStatus>("checking");
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   const checkingRef = useRef(false);
+
+  const closeFeedback = useCallback(() => {
+    setFeedbackOpen(false);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -320,145 +368,171 @@ function Sidebar({
         : "Unable to verify your Supabase connection";
 
   return (
-    <aside className="fm-sidebar">
-      <div className="fm-sidebar-brand">
-        <div className="fm-sidebar-logo" aria-hidden="true">
-          <img
-            src="/flowmind-mark.svg"
-            alt=""
-            width={27}
-            height={27}
+    <>
+      <aside className="fm-sidebar">
+        <div className="fm-sidebar-brand">
+          <div className="fm-sidebar-logo" aria-hidden="true">
+            <img
+              src="/flowmind-mark.svg"
+              alt=""
+              width={27}
+              height={27}
+              style={{
+                display: "block",
+                objectFit: "contain",
+              }}
+            />
+          </div>
+
+          <div className="fm-sidebar-brand-text">
+            <span className="fm-sidebar-name">
+              flowmind<span>.</span>
+            </span>
+
+            <span className="fm-sidebar-tagline">A SPACE TO THINK CLEARLY</span>
+          </div>
+        </div>
+
+        <p className="fm-sidebar-section-label">WORKSPACE</p>
+
+        <nav className="fm-sidebar-nav" aria-label="Main navigation">
+          {NAVIGATION.map((item) => {
+            const isActive = currentPage === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`fm-sidebar-link ${isActive ? "active" : ""}`}
+                onClick={() => onNavigate(item.id)}
+                aria-current={isActive ? "page" : undefined}
+                title={item.label}
+              >
+                <span className="fm-sidebar-link-icon">
+                  <NavIcon name={item.icon} />
+                </span>
+
+                <span className="fm-sidebar-link-label">{item.label}</span>
+
+                {isActive && (
+                  <span className="fm-sidebar-active-dot" aria-hidden="true" />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="fm-sidebar-bottom">
+          <div
+            className="fm-sidebar-support"
             style={{
-              display: "block",
-              objectFit: "contain",
+              padding: "0 6px 12px",
             }}
-          />
-        </div>
-
-        <div className="fm-sidebar-brand-text">
-          <span className="fm-sidebar-name">
-            flowmind<span>.</span>
-          </span>
-
-          <span className="fm-sidebar-tagline">A SPACE TO THINK CLEARLY</span>
-        </div>
-      </div>
-
-      <p className="fm-sidebar-section-label">WORKSPACE</p>
-
-      <nav className="fm-sidebar-nav" aria-label="Main navigation">
-        {NAVIGATION.map((item) => {
-          const isActive = currentPage === item.id;
-
-          return (
+          >
             <button
-              key={item.id}
               type="button"
-              className={`fm-sidebar-link ${isActive ? "active" : ""}`}
-              onClick={() => onNavigate(item.id)}
-              aria-current={isActive ? "page" : undefined}
-              title={item.label}
+              className="fm-sidebar-link"
+              onClick={() => setFeedbackOpen(true)}
+              title="Help & Feedback"
             >
               <span className="fm-sidebar-link-icon">
-                <NavIcon name={item.icon} />
+                <NavIcon name="help" />
               </span>
 
-              <span className="fm-sidebar-link-label">{item.label}</span>
+              <span className="fm-sidebar-link-label">Help & Feedback</span>
+            </button>
+          </div>
 
-              {isActive && (
-                <span className="fm-sidebar-active-dot" aria-hidden="true" />
+          <div className="fm-sidebar-appearance">
+            <p>APPEARANCE</p>
+
+            <div
+              className="fm-sidebar-theme-switch"
+              role="group"
+              aria-label="Appearance"
+            >
+              <button
+                type="button"
+                className={theme === "light" ? "active" : ""}
+                aria-pressed={theme === "light"}
+                onClick={() => changeTheme("light")}
+                title="Light mode"
+              >
+                <NavIcon name="sun" />
+                <span>Light</span>
+              </button>
+
+              <button
+                type="button"
+                className={theme === "dark" ? "active" : ""}
+                aria-pressed={theme === "dark"}
+                onClick={() => changeTheme("dark")}
+                title="Dark mode"
+              >
+                <NavIcon name="moon" />
+                <span>Dark</span>
+              </button>
+            </div>
+          </div>
+
+          {(onReviewLocalData || onSignOut) && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                padding: "0 6px 17px",
+              }}
+            >
+              {onReviewLocalData && (
+                <button
+                  type="button"
+                  className="fm-sidebar-link"
+                  onClick={onReviewLocalData}
+                >
+                  <span className="fm-sidebar-link-label">
+                    Review local data
+                  </span>
+                </button>
               )}
-            </button>
-          );
-        })}
-      </nav>
 
-      <div className="fm-sidebar-bottom">
-        <div className="fm-sidebar-appearance">
-          <p>APPEARANCE</p>
+              {onSignOut && (
+                <button
+                  type="button"
+                  className="fm-sidebar-link"
+                  onClick={onSignOut}
+                  disabled={signingOut || signOutDisabled || saving}
+                >
+                  <span className="fm-sidebar-link-label">
+                    {signingOut ? "Signing out..." : "Sign out"}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
 
-          <div
-            className="fm-sidebar-theme-switch"
-            role="group"
-            aria-label="Appearance"
-          >
-            <button
-              type="button"
-              className={theme === "light" ? "active" : ""}
-              aria-pressed={theme === "light"}
-              onClick={() => changeTheme("light")}
-              title="Light mode"
+          <div className="fm-sidebar-footer">
+            <div
+              className="fm-sidebar-local-status"
+              title={statusDescription}
+              role="status"
+              aria-live="polite"
             >
-              <NavIcon name="sun" />
-              <span>Light</span>
-            </button>
+              <span
+                className={`fm-sidebar-status-dot ${workspaceStatus}`}
+                aria-hidden="true"
+              />
 
-            <button
-              type="button"
-              className={theme === "dark" ? "active" : ""}
-              aria-pressed={theme === "dark"}
-              onClick={() => changeTheme("dark")}
-              title="Dark mode"
-            >
-              <NavIcon name="moon" />
-              <span>Dark</span>
-            </button>
+              <span>{statusLabel}</span>
+            </div>
+
+            <span className="fm-sidebar-version">Version 1.0.0</span>
           </div>
         </div>
+      </aside>
 
-        {(onReviewLocalData || onSignOut) && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              padding: "0 6px 17px",
-            }}
-          >
-            {onReviewLocalData && (
-              <button
-                type="button"
-                className="fm-sidebar-link"
-                onClick={onReviewLocalData}
-              >
-                <span className="fm-sidebar-link-label">Review local data</span>
-              </button>
-            )}
-
-            {onSignOut && (
-              <button
-                type="button"
-                className="fm-sidebar-link"
-                onClick={onSignOut}
-                disabled={signingOut || signOutDisabled || saving}
-              >
-                <span className="fm-sidebar-link-label">
-                  {signingOut ? "Signing out..." : "Sign out"}
-                </span>
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="fm-sidebar-footer">
-          <div
-            className="fm-sidebar-local-status"
-            title={statusDescription}
-            role="status"
-            aria-live="polite"
-          >
-            <span
-              className={`fm-sidebar-status-dot ${workspaceStatus}`}
-              aria-hidden="true"
-            />
-
-            <span>{statusLabel}</span>
-          </div>
-
-          <span className="fm-sidebar-version">Version 1.0.0</span>
-        </div>
-      </div>
-    </aside>
+      <FeedbackModal open={feedbackOpen} onClose={closeFeedback} />
+    </>
   );
 }
 
