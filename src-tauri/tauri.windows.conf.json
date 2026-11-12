@@ -1,6 +1,7 @@
 {
     "identifier": "com.flowmind.app",
     "productName": "FlowMind",
+    "version": "1.0.1",
     "bundle": {
         "windows": {
             "nsis": {
