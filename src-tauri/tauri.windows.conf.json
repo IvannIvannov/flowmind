@@ -1,0 +1,14 @@
+{
+    "identifier": "com.flowmind.app",
+    "productName": "FlowMind",
+    "bundle": {
+        "windows": {
+            "nsis": {
+                "sidebarImage": "installer/sidebar.bmp",
+                "headerImage": "installer/header.bmp",
+                "installerIcon": "icons/icon.ico",
+                "uninstallerIcon": "icons/icon.ico"
+            }
+        }
+    }
+}
